@@ -1,0 +1,13 @@
+use_frameworks!
+
+platform :ios, '9.0'
+
+target 'KcDebugTool_Example' do
+  pod 'KcDebugTool', :path => '../'
+
+  target 'KcDebugTool_Tests' do
+    inherit! :search_paths
+
+    
+  end
+end
