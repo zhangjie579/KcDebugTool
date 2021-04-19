@@ -9,16 +9,16 @@
 
 @implementation UIView (KcDebugLayout)
 
-+ (NSString *)kc_rootWindowViewHierarchy {
-    return [UIApplication.sharedApplication.keyWindow ?: UIApplication.sharedApplication.delegate.window kc_viewHierarchy];
++ (NSString *)kc_debug_rootWindowViewHierarchy {
+    return [UIApplication.sharedApplication.keyWindow ?: UIApplication.sharedApplication.delegate.window kc_debug_viewHierarchy];
 }
 
-+ (NSString *)kc_keyWindowViewHierarchy {
-    return [UIApplication.sharedApplication.keyWindow kc_viewHierarchy];
++ (NSString *)kc_debug_keyWindowViewHierarchy {
+    return [UIApplication.sharedApplication.keyWindow kc_debug_viewHierarchy];
 }
 
 /// 打印view层级
-- (NSString *)kc_viewHierarchy {
+- (NSString *)kc_debug_viewHierarchy {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     NSString *description = [self performSelector:NSSelectorFromString(@"recursiveDescription")];
@@ -28,7 +28,7 @@
 }
 
 /// 打印自动布局层级
-- (NSString *)kc_autoLayoutHierarchy {
+- (NSString *)kc_debug_autoLayoutHierarchy {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     NSString *description = [self performSelector:NSSelectorFromString(@"_autolayoutTrace")];
@@ -44,7 +44,7 @@
 @implementation UIViewController (KcDebugLayout)
 
 /// 打印ViewController的层级
-- (void)kc_viewControllerHierarchy {
+- (void)kc_debug_viewControllerHierarchy {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     NSString *description = [self performSelector:NSSelectorFromString(@"_printHierarchy")];

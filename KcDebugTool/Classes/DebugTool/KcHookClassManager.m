@@ -60,7 +60,7 @@ __attribute__((constructor)) void kc_hookDebugClass() {
 //    }];
     
     // gesture 看log 👻
-    [NSObject kc_hookGestureRecognizerSendActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+    [NSObject kc_hook_gestureRecognizerSendActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 
     }];
     
@@ -111,7 +111,7 @@ __attribute__((constructor)) void kc_hookDebugClass() {
 
         // hook - class 所有方法
         [classNames enumerateObjectsUsingBlock:^(NSString * _Nonnull name, NSUInteger idx, BOOL * _Nonnull stop) {
-            [NSObject kc_hookInstanceMethodListWithObjc:NSClassFromString(name) info:parameters usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+            [NSObject kc_hook_instanceMethodListWithObjc:NSClassFromString(name) info:parameters usingBlock:^(KcHookAspectInfo * _Nonnull info) {
                 
             }];
         }];
@@ -145,7 +145,7 @@ __attribute__((constructor)) void kc_hookDebugClass() {
     
     // hook - class 所有方法
     [classNames enumerateObjectsUsingBlock:^(NSString * _Nonnull name, NSUInteger idx, BOOL * _Nonnull stop) {
-        [NSObject kc_hookInstanceMethodListWithObjc:NSClassFromString(name) info:parameters usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [NSObject kc_hook_instanceMethodListWithObjc:NSClassFromString(name) info:parameters usingBlock:^(KcHookAspectInfo * _Nonnull info) {
             
         }];
     }];

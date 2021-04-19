@@ -326,8 +326,8 @@ bool kc_classIsCustomClass(Class aClass);
 #pragma mark - dealloc
 
 /// hook dealloc
-+ (void)kc_hookDealloc:(NSArray<NSString *> *)classNames block:(void(^)(KcHookAspectInfo *info))block {
-    [self kc_hookSelector:NSSelectorFromString(@"dealloc") classNames:classNames block:block];
++ (void)kc_hook_dealloc:(NSArray<NSString *> *)classNames block:(void(^)(KcHookAspectInfo *info))block {
+    [self kc_hook_selector:NSSelectorFromString(@"dealloc") classNames:classNames block:block];
 }
 
 - (KcDeallocObserver *)kc_deallocObserverWithBlock:(void(^)(void))block {
@@ -398,7 +398,7 @@ bool kc_classIsCustomClass(Class aClass) {
 #pragma mark - 调试方法
 
 /// 所有方法(包括层级)
-+ (NSString *)kc_allMethods {
++ (NSString *)kc_debug_allMethods {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     NSString *description = [self performSelector:NSSelectorFromString(@"_methodDescription")];
@@ -408,7 +408,7 @@ bool kc_classIsCustomClass(Class aClass) {
 }
 
 /// 所有自定义方法
-+ (NSString *)kc_allCustomMethods {
++ (NSString *)kc_debug_allCustomMethods {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     NSString *description = [self performSelector:NSSelectorFromString(@"_shortMethodDescription")];
@@ -418,7 +418,7 @@ bool kc_classIsCustomClass(Class aClass) {
 }
 
 /// 获取所有成员变量
-- (NSString *)kc_allIvars {
+- (NSString *)kc_debug_allIvars {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     // _ivarDescription

@@ -92,7 +92,6 @@
                  selector:@selector(removeFromSuperview)
               withOptions:KcAspectTypeAfter
                usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        UIView *subView = info.arguments[0];
         [KcLogParamModel logWithKey:info.selectorName format:@"self: %@, superview: %@", info.instance, [info.instance superview]];
     } error:nil];
 }

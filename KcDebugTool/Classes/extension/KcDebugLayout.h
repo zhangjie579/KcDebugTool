@@ -13,20 +13,20 @@ NS_ASSUME_NONNULL_BEGIN
 @interface UIView (KcDebugLayout)
 
 /// 打印view层级
-+ (NSString *)kc_rootWindowViewHierarchy;
-+ (NSString *)kc_keyWindowViewHierarchy;
++ (NSString *)kc_debug_rootWindowViewHierarchy;
++ (NSString *)kc_debug_keyWindowViewHierarchy;
 /// 打印view层级
-- (NSString *)kc_viewHierarchy;
+- (NSString *)kc_debug_viewHierarchy;
 
 /// 打印自动布局层级
-- (NSString *)kc_autoLayoutHierarchy;
+- (NSString *)kc_debug_autoLayoutHierarchy;
 
 @end
 
 @interface UIViewController (KcDebugLayout)
 
 /// 打印ViewController的层级
-- (void)kc_viewControllerHierarchy;
+- (void)kc_debug_viewControllerHierarchy;
 
 @end
 

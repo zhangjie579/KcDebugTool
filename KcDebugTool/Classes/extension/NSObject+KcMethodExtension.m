@@ -11,11 +11,11 @@
 
 @implementation NSObject (KcMethodExtension)
 
-+ (void)kc_hookInstanceMethodListWithInfo:(KcHookInfo *)info usingBlock:(void(^)(KcHookAspectInfo *info))block {
-    [self kc_hookInstanceMethodListWithObjc:self info:info usingBlock:block];
++ (void)kc_hook_instanceMethodListWithInfo:(KcHookInfo *)info usingBlock:(void(^)(KcHookAspectInfo *info))block {
+    [self kc_hook_instanceMethodListWithObjc:self info:info usingBlock:block];
 }
 
-+ (void)kc_hookInstanceMethodListWithObjc:(id)objc info:(KcHookInfo *)info usingBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_instanceMethodListWithObjc:(id)objc info:(KcHookInfo *)info usingBlock:(void(^)(KcHookAspectInfo *info))block {
     NSArray<NSString *> *instanceMethods = [objc kc_instanceMethodListWithInfo:info.methodInfo];
     if (instanceMethods.count <= 0) {
         return;
@@ -33,14 +33,14 @@
 }
 
 /// hook 多个class的方法
-+ (void)kc_hookSelectorName:(NSString *)selectorName
++ (void)kc_hook_selectorName:(NSString *)selectorName
                  classNames:(NSArray<NSString *> *)classNames
                       block:(void(^)(KcHookAspectInfo *info))block {
-    [self kc_hookSelector:NSSelectorFromString(selectorName) classNames:classNames block:block];
+    [self kc_hook_selector:NSSelectorFromString(selectorName) classNames:classNames block:block];
 }
 
 /// hook 多个class的方法
-+ (void)kc_hookSelector:(SEL)selector
++ (void)kc_hook_selector:(SEL)selector
              classNames:(NSArray<NSString *> *)classNames
                   block:(void(^)(KcHookAspectInfo *info))block {
     id<KcAspectable> manager = KcHookTool.manager;
@@ -60,7 +60,7 @@
 #pragma mark - 属性
 
 /// 监听属性的set
-+ (void)kc_hookClassSetPropertys:(NSArray<NSString *> *)propertyNames
++ (void)kc_hook_classSetPropertys:(NSArray<NSString *> *)propertyNames
                        className:(NSString *)className
                            block:(void(^)(KcHookAspectInfo *info))block {
     [propertyNames enumerateObjectsUsingBlock:^(NSString * _Nonnull name, NSUInteger idx, BOOL * _Nonnull stop) {
@@ -90,7 +90,7 @@
 // -------------  UIControl
 
 /// hook UIControl sendAction:to:forEvent:
-+ (void)kc_hookSendActionForEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_sendActionForEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIControl class]
                              selector:@selector(sendAction:to:forEvent:)
                           withOptions:KcAspectTypeBefore
@@ -103,7 +103,7 @@
 }
 
 /// hook UIApplication sendAction:to:from:forEvent:
-+ (void)kc_hookUIApplicationSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_UIApplicationSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIApplication class]
                              selector:@selector(sendAction:to:from:forEvent:)
                           withOptions:KcAspectTypeBefore
@@ -117,7 +117,7 @@
 
 /// hook -[UIApplication sendEvent:]
 /// 缺点: 不知道这个event会传给谁处理
-+ (void)kc_hookUIApplicationSendEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_UIApplicationSendEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIApplication class]
                              selector:@selector(sendEvent:)
                           withOptions:KcAspectTypeBefore
@@ -160,7 +160,7 @@ _UIGestureRecognizerSendActions
 _UIGestureRecognizerSendTargetActions
 -[UIGestureRecognizerTarget _sendActionWithGestureRecognizer:]
 */
-+ (void)kc_hookGestureRecognizerSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_gestureRecognizerSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:NSClassFromString(@"UIGestureRecognizerTarget")
                              selector:NSSelectorFromString(@"_sendActionWithGestureRecognizer:")
                           withOptions:KcAspectTypeBefore
@@ -185,13 +185,13 @@ _UIGestureRecognizerSendTargetActions
 }
 
 /// hook UIGestureRecognizer的addTarget、initWithTarget方式的event
-+ (void)kc_hookGestureRecognizerAllTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
-    [self kc_hookGestureRecognizerAddTargetActionWithBlock:block];
-    [self kc_hookGestureRecognizerInitTargetActionWithBlock:block];
++ (void)kc_hook_gestureRecognizerAllTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
+    [self kc_hook_gestureRecognizerAddTargetActionWithBlock:block];
+    [self kc_hook_gestureRecognizerInitTargetActionWithBlock:block];
 }
 
 /// hook UIGestureRecognizer的addTarget方式的event
-+ (void)kc_hookGestureRecognizerAddTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_gestureRecognizerAddTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIGestureRecognizer class]
                              selector:@selector(addTarget:action:)
                           withOptions:KcAspectTypeBefore
@@ -199,12 +199,12 @@ _UIGestureRecognizerSendTargetActions
         id target = info.arguments.firstObject;
         id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
         
-        [self kc_hookCustomClassWithTarget:target action:action block:block];
+        [self kc_hook_customClassWithTarget:target action:action block:block];
     } error:nil];
 }
 
 /// hook UIGestureRecognizer的initWithTarget方式的event
-+ (void)kc_hookGestureRecognizerInitTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
++ (void)kc_hook_gestureRecognizerInitTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIGestureRecognizer class]
                              selector:@selector(initWithTarget:action:)
                           withOptions:KcAspectTypeBefore
@@ -212,7 +212,7 @@ _UIGestureRecognizerSendTargetActions
         id target = info.arguments.firstObject;
         id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
         
-        [self kc_hookCustomClassWithTarget:target action:action block:block];
+        [self kc_hook_customClassWithTarget:target action:action block:block];
     } error:nil];
 }
 
@@ -231,13 +231,13 @@ _UIGestureRecognizerSendTargetActions
 
 /// hook 自定义方法的target/action
 
-+ (void)kc_hookCustomClassWithTarget:(id)target
++ (void)kc_hook_customClassWithTarget:(id)target
                               action:(id)action
                                block:(void(^)(KcHookAspectInfo *info))block {
-    [self kc_hookCustomClassWithTarget:target action:action logIdentity:@"UIGestureRecognizer" block:block];
+    [self kc_hook_customClassWithTarget:target action:action logIdentity:@"UIGestureRecognizer" block:block];
 }
 
-+ (void)kc_hookCustomClassWithTarget:(id)target
++ (void)kc_hook_customClassWithTarget:(id)target
                               action:(id)action
                          logIdentity:(NSString *)logIdentity
                                block:(void(^)(KcHookAspectInfo *info))block {
@@ -270,7 +270,7 @@ ___CFXNotificationPost_block_invoke ()
 _CFXRegistrationPost1
 __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
 */
-+ (void)kc_hookNotificationNameWithFilterBlock:(BOOL(^)(NSString *name))filterBlock
++ (void)kc_hook_notificationNameWithFilterBlock:(BOOL(^)(NSString *name))filterBlock
                                          block:(void(^ _Nullable)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:NSNotificationCenter.class
                          selectorName:@"addObserver:selector:name:object:"

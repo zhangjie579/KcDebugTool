@@ -24,7 +24,7 @@
     
     for (uint32_t i = 0; i < count; i++) {
         const char *path = _dyld_get_image_name(i);
-        NSString *imagePath = [NSString stringWithUTF8String:path];
+//        NSString *imagePath = [NSString stringWithUTF8String:path];
         
         if (block) {
             block(path);
