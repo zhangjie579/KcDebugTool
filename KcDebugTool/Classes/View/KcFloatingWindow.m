@@ -44,8 +44,6 @@
 - (void)updatePosition {
     CGPoint point = [self.panGestureRecognizer translationInView:self];
     
-    NSLog(@"%@", NSStringFromCGPoint(point));
-    
     CGSize maxSize = CGSizeMake(CGRectGetWidth(UIScreen.mainScreen.bounds) - CGRectGetWidth(self.frame),
                                 CGRectGetHeight(UIScreen.mainScreen.bounds) - CGRectGetHeight(self.frame));
     CGPoint currentWindowPoint = self.frame.origin;

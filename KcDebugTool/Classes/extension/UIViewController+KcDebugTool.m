@@ -115,7 +115,7 @@
     [array enumerateObjectsUsingBlock:^(KcHookModel * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
         [tool kc_hookWithObjc:obj.key selectorName:obj.value withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
             UIViewController *fromViewController = [UIViewController kc_topViewControllerWithBaseViewController:info.instance];
-            UIViewController *toViewController = nil;
+            UIViewController * _Nullable toViewController = nil;
             if ([obj.value isEqualToString:selectorNamePush] || [obj.value isEqualToString:selectorNamePresent]) {
                 toViewController = [UIViewController kc_topViewControllerWithBaseViewController:info.arguments.firstObject];
                 if (showBlock) {
@@ -126,7 +126,7 @@
                     dismissBlock(fromViewController);
                 }
             }
-            [KcLogParamModel logWithKey:@"跳转" format:@"%@ from: %@, to: %@", obj.value, fromViewController, toViewController];
+            [KcLogParamModel logWithKey:@"跳转" format:@"%@ from: %@, to: %@, self: %@", obj.value, fromViewController, toViewController ?: @"", info.instance];
         }];
     }];
 }

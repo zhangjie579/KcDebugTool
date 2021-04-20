@@ -40,39 +40,43 @@ __attribute__((constructor)) void kc_hookDebugClass() {
 }
 
 + (void)asyncAfter_hookDebugClass {
-    // hook - UINavigationController 跳转相关代码
+    // hook - UINavigationController 跳转相关代码 👻
 //    [UIViewController kc_hook_navigationControllerWithShowBlock:^(Class  _Nonnull __unsafe_unretained toViewControllerType, UIViewController * _Nonnull fromViewController, UIViewController * _Nonnull toViewController) {
 //        KcHookInfo *info = [KcHookInfo makeDefaultInfo];
 //        info.logModel.isLogClassName = true;
-//        
+//
 ////        if (toViewController) {
 ////            [NSObject kc_hookInstanceMethodListWithObjc:toViewController.class info:info usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 ////
 ////            }];
 ////        }
 //    } dismissBlock:^(UIViewController * _Nonnull fromViewController) {
-//        
+//
 //    }];
     
-    // UIControl sendEvent
-//    [NSObject kc_hookSendActionForEventWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+    // UIControl sendEvent 👻
+//    [NSObject kc_hook_sendActionForEventWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 //
 //    }];
     
     // gesture 看log 👻
-    [NSObject kc_hook_gestureRecognizerSendActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
-
-    }];
+//    [NSObject kc_hook_gestureRecognizerSendActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+//
+//    }];
+    
+    // cell相关 👻
+//    [UITableView kc_hook_cellDidSelect];
+//    [UICollectionView kc_hook_cellDidSelect];
     
     // 通知
-//    [NSObject kc_hookNotificationNameWithFilterBlock:^BOOL(NSString * _Nonnull name) {
+//    [NSObject kc_hook_notificationNameWithFilterBlock:^BOOL(NSString * _Nonnull name) {
 //        return [name isEqualToString:UIKeyboardWillShowNotification] || [name isEqualToString:UIKeyboardWillHideNotification];
 //    } block:^(KcHookAspectInfo * _Nonnull info) {
 //
 //    }];
     
-    // [UIApplication sendEvent:]
-//    [NSObject kc_hookUIApplicationSendEventWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+    // [UIApplication sendEvent:] 👻
+//    [NSObject kc_hook_UIApplicationSendEventWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 //
 //    }];
     
@@ -85,8 +89,6 @@ __attribute__((constructor)) void kc_hookDebugClass() {
 + (void)sync_hookDebugClass {
     {
         NSArray<NSString *> *classNames = @[
-//            @"NWAVReceiverRTMP",
-//            @"NWGLView",
             @"LVAVReceiveServiceImpl",
         ];
         

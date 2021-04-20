@@ -7,13 +7,15 @@
 //  hook类方法管理者
 
 #import <UIKit/UIKit.h>
+#import "KcHookTool.h"
+#import "KcHookModel.h"
 #import "UIView+KcDebugTool.h"
 #import "UIViewController+KcDebugTool.h"
 #import "NSObject+KcRuntimeExtension.h"
 #import "NSObject+KcMethodExtension.h"
 #import "WKWebView+KcDebugTool.h"
-#import "KcHookTool.h"
-#import "KcHookModel.h"
+#import "UICollectionView+KcDebugTool.h"
+#import "UITableView+KcDebugTool.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

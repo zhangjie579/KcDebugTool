@@ -80,6 +80,14 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)kc_hook_notificationNameWithFilterBlock:(BOOL(^)(NSString *name))filterBlock
                                          block:(void(^ _Nullable)(KcHookAspectInfo *info))block;
 
+#pragma mark - tableView
+
+/// hook tableView delegate
++ (void)kc_hook_tableView_delegate;
+
+/// hook collectionView delegate
++ (void)kc_hook_collectionView_delegate;
+
 @end
 
 NS_ASSUME_NONNULL_END

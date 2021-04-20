@@ -51,6 +51,10 @@
 		AD2A6CA3B9533C3C5AA7FBD770F37961 /* KcFloatingWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = 1C3910F2B2CC827AAC5689F0E3E04BFE /* KcFloatingWindow.m */; };
 		BADB097C9C1593E7EEF0E1BBADCB5D93 /* UIViewController+KcDebugTool.h in Headers */ = {isa = PBXBuildFile; fileRef = F74599A271E32D91410E282E5E9397BC /* UIViewController+KcDebugTool.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BDEC2B69D411436FAE5227E26B35A8DC /* UIView+KcDebugTool.m in Sources */ = {isa = PBXBuildFile; fileRef = 59A33ECB518CB19A5B435C2BCA2F2DAC /* UIView+KcDebugTool.m */; };
+		C1EB19FE262E852100FF6AC1 /* UITableView+KcDebugTool.h in Headers */ = {isa = PBXBuildFile; fileRef = C1EB19FC262E852100FF6AC1 /* UITableView+KcDebugTool.h */; };
+		C1EB19FF262E852100FF6AC1 /* UITableView+KcDebugTool.m in Sources */ = {isa = PBXBuildFile; fileRef = C1EB19FD262E852100FF6AC1 /* UITableView+KcDebugTool.m */; };
+		C1EB1A05262E853200FF6AC1 /* UICollectionView+KcDebugTool.h in Headers */ = {isa = PBXBuildFile; fileRef = C1EB1A03262E853100FF6AC1 /* UICollectionView+KcDebugTool.h */; };
+		C1EB1A06262E853200FF6AC1 /* UICollectionView+KcDebugTool.m in Sources */ = {isa = PBXBuildFile; fileRef = C1EB1A04262E853200FF6AC1 /* UICollectionView+KcDebugTool.m */; };
 		C4EC21D730D56946C36EC63C502CF667 /* Pods-KcDebugTool_Example-dummy.m in Sources */ = {isa = PBXBuildFile; fileRef = 01D29BB2F4E1E71604526B76857D0C72 /* Pods-KcDebugTool_Example-dummy.m */; };
 		CD693045D812A71B8FBA93908A12F3C8 /* KcDebugView.m in Sources */ = {isa = PBXBuildFile; fileRef = 864718C212C3F781AC7433A913FE3675 /* KcDebugView.m */; };
 		D373F2AE00284113CC2BFB30DD4EFDDE /* KcHookModel.m in Sources */ = {isa = PBXBuildFile; fileRef = BD006862FFD2BD0677B3A63B08A55576 /* KcHookModel.m */; };
@@ -104,7 +108,7 @@
 		31676E908063B3E6538BFD18CD701263 /* SMCallLib.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = SMCallLib.h; sourceTree = "<group>"; };
 		31E1A0D760D102EB79EA011EE756E01B /* NSObject+KcMethodExtension.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "NSObject+KcMethodExtension.m"; sourceTree = "<group>"; };
 		35D1290686CBFD4F84A6A727737B1052 /* UIWindow+KcDebugTool.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "UIWindow+KcDebugTool.m"; sourceTree = "<group>"; };
-		38C07D49702F34EEBEF3113267190F8F /* Pods_KcDebugTool_Example.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; name = Pods_KcDebugTool_Example.framework; path = "Pods-KcDebugTool_Example.framework"; sourceTree = BUILT_PRODUCTS_DIR; };
+		38C07D49702F34EEBEF3113267190F8F /* Pods_KcDebugTool_Example.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_KcDebugTool_Example.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		454E1146F4A301749F03CF21393B6221 /* WKWebView+KcDebugTool.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "WKWebView+KcDebugTool.m"; sourceTree = "<group>"; };
 		45FF946B7FA18C95974E6F86B80C4BC3 /* KcGlobalWindowBtn.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcGlobalWindowBtn.h; sourceTree = "<group>"; };
 		4B88C5E8AF9496D5748AE04B556A585E /* KcHookClassManager.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcHookClassManager.h; sourceTree = "<group>"; };
@@ -117,8 +121,8 @@
 		6D42E5B3A8593AA0484C0B01438B071D /* KcHookTool.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcHookTool.h; sourceTree = "<group>"; };
 		6EB06D5CCB63A531AFAB91B810458B01 /* KcGlobalWindowBtn.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcGlobalWindowBtn.m; sourceTree = "<group>"; };
 		768F872435A3CE28CB0FCD8564817E1C /* KcFluencyMonitor.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcFluencyMonitor.m; sourceTree = "<group>"; };
-		7717305D835CB3C7E8042CCF75225BDD /* LICENSE */ = {isa = PBXFileReference; includeInIndex = 1; path = LICENSE; sourceTree = "<group>"; };
-		785575C157225C7EECADDF5FA6ADA2DD /* README.md */ = {isa = PBXFileReference; includeInIndex = 1; path = README.md; sourceTree = "<group>"; };
+		7717305D835CB3C7E8042CCF75225BDD /* LICENSE */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		785575C157225C7EECADDF5FA6ADA2DD /* README.md */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		792500098305BE66EB1DCC52D5086D4E /* KcMethodCallStack.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcMethodCallStack.h; sourceTree = "<group>"; };
 		81307303B4E3E50FF51BDD2C91132460 /* Pods-KcDebugTool_Tests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-KcDebugTool_Tests.debug.xcconfig"; sourceTree = "<group>"; };
 		8593B6FD9D4A0CC2B766B1E904968EB5 /* KcDebugTool.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = KcDebugTool.release.xcconfig; sourceTree = "<group>"; };
@@ -130,21 +134,25 @@
 		94C472D3F02973635F320D108ED8A81B /* NSObject+KcRuntimeExtension.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "NSObject+KcRuntimeExtension.h"; sourceTree = "<group>"; };
 		95481ABFE2BC20A3901A651A0F5B73DE /* KcDebugTool.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcDebugTool.m; sourceTree = "<group>"; };
 		95691B1C33F95962DB4C7CDCDC1A02E3 /* Pods-KcDebugTool_Example-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Pods-KcDebugTool_Example-Info.plist"; sourceTree = "<group>"; };
-		99BC5D3ADCC9918AC9318C17824B3C92 /* Pods_KcDebugTool_Tests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; name = Pods_KcDebugTool_Tests.framework; path = "Pods-KcDebugTool_Tests.framework"; sourceTree = BUILT_PRODUCTS_DIR; };
+		99BC5D3ADCC9918AC9318C17824B3C92 /* Pods_KcDebugTool_Tests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_KcDebugTool_Tests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A05A102B32BF2813D22629B10835158 /* KcDebugTool-dummy.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "KcDebugTool-dummy.m"; sourceTree = "<group>"; };
 		9A979E29CE4E6DEA830439DE1A809777 /* NSMethodSignature+KcExtension.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "NSMethodSignature+KcExtension.h"; sourceTree = "<group>"; };
-		9D940727FF8FB9C785EB98E56350EF41 /* Podfile */ = {isa = PBXFileReference; explicitFileType = text.script.ruby; includeInIndex = 1; indentWidth = 2; lastKnownFileType = text; name = Podfile; path = ../Podfile; sourceTree = SOURCE_ROOT; tabWidth = 2; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
+		9D940727FF8FB9C785EB98E56350EF41 /* Podfile */ = {isa = PBXFileReference; explicitFileType = text.script.ruby; includeInIndex = 1; indentWidth = 2; name = Podfile; path = ../Podfile; sourceTree = SOURCE_ROOT; tabWidth = 2; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
 		A0566AED5375D5144359E4245D6C4000 /* KcDebugTool-umbrella.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "KcDebugTool-umbrella.h"; sourceTree = "<group>"; };
 		ABEB317ED119ED234E05F67F7806CA0A /* KcDebugTool.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcDebugTool.h; sourceTree = "<group>"; };
 		AD580B1C2294E76B73590552E0E44146 /* Pods-KcDebugTool_Tests-acknowledgements.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Pods-KcDebugTool_Tests-acknowledgements.plist"; sourceTree = "<group>"; };
-		B18220BAF36F1664F992CED740809B2F /* KcDebugTool.podspec */ = {isa = PBXFileReference; explicitFileType = text.script.ruby; includeInIndex = 1; indentWidth = 2; lastKnownFileType = text; path = KcDebugTool.podspec; sourceTree = "<group>"; tabWidth = 2; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
-		B4AF4616F0DE644F5286801F9EA99181 /* KcDebugTool.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; name = KcDebugTool.framework; path = KcDebugTool.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		B18220BAF36F1664F992CED740809B2F /* KcDebugTool.podspec */ = {isa = PBXFileReference; explicitFileType = text.script.ruby; includeInIndex = 1; indentWidth = 2; path = KcDebugTool.podspec; sourceTree = "<group>"; tabWidth = 2; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
+		B4AF4616F0DE644F5286801F9EA99181 /* KcDebugTool.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = KcDebugTool.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B74E4779877418188E550C1318D3FF4B /* KcScrollViewTool.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcScrollViewTool.h; sourceTree = "<group>"; };
 		B93653339E27FB15D7BD99F9CD02CEDC /* Pods-KcDebugTool_Example.modulemap */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.module; path = "Pods-KcDebugTool_Example.modulemap"; sourceTree = "<group>"; };
 		BA37470D64B9580C8C7B74A0A502A091 /* Pods-KcDebugTool_Tests.modulemap */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.module; path = "Pods-KcDebugTool_Tests.modulemap"; sourceTree = "<group>"; };
 		BCE2AAD74C00F14080D832A122032480 /* KcMachOHelper.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcMachOHelper.m; sourceTree = "<group>"; };
 		BD006862FFD2BD0677B3A63B08A55576 /* KcHookModel.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcHookModel.m; sourceTree = "<group>"; };
 		BE7F6DB5B58B44996B72BE949408CE81 /* Pods-KcDebugTool_Example.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-KcDebugTool_Example.debug.xcconfig"; sourceTree = "<group>"; };
+		C1EB19FC262E852100FF6AC1 /* UITableView+KcDebugTool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UITableView+KcDebugTool.h"; sourceTree = "<group>"; };
+		C1EB19FD262E852100FF6AC1 /* UITableView+KcDebugTool.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "UITableView+KcDebugTool.m"; sourceTree = "<group>"; };
+		C1EB1A03262E853100FF6AC1 /* UICollectionView+KcDebugTool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UICollectionView+KcDebugTool.h"; sourceTree = "<group>"; };
+		C1EB1A04262E853200FF6AC1 /* UICollectionView+KcDebugTool.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "UICollectionView+KcDebugTool.m"; sourceTree = "<group>"; };
 		C55EB35C1775DFB0399181189F278B32 /* KcDebugTool-prefix.pch */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "KcDebugTool-prefix.pch"; sourceTree = "<group>"; };
 		C960473815FF7AF899EFBF8C16339BC5 /* KcHookTool.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcHookTool.m; sourceTree = "<group>"; };
 		C9E6EFC593F5C1E8D874E9D4FD8260C7 /* KcAspects.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = KcAspects.h; sourceTree = "<group>"; };
@@ -229,7 +237,6 @@
 				02A3BE57341D1DA9FFD0454A98719D21 /* SMCallStack.h */,
 				933655A9F874375FA344AE3517C157FE /* SMCallStack.m */,
 			);
-			name = SMCallStack;
 			path = SMCallStack;
 			sourceTree = "<group>";
 		};
@@ -278,6 +285,10 @@
 				35D1290686CBFD4F84A6A727737B1052 /* UIWindow+KcDebugTool.m */,
 				0F7AC16BA09C6CFF454808A1DFA75C12 /* WKWebView+KcDebugTool.h */,
 				454E1146F4A301749F03CF21393B6221 /* WKWebView+KcDebugTool.m */,
+				C1EB19FC262E852100FF6AC1 /* UITableView+KcDebugTool.h */,
+				C1EB19FD262E852100FF6AC1 /* UITableView+KcDebugTool.m */,
+				C1EB1A03262E853100FF6AC1 /* UICollectionView+KcDebugTool.h */,
+				C1EB1A04262E853200FF6AC1 /* UICollectionView+KcDebugTool.m */,
 			);
 			name = extension;
 			path = KcDebugTool/Classes/extension;
@@ -459,6 +470,7 @@
 				893CF755BEC52355C01DD340B9715743 /* KcGlobalWindowBtn.h in Headers */,
 				543CF8B0C13E9A6B91D4E84B4E36437A /* KcHookClassManager.h in Headers */,
 				205CAF14C6C9E891F026C5D5D244DDFB /* KcHookModel.h in Headers */,
+				C1EB1A05262E853200FF6AC1 /* UICollectionView+KcDebugTool.h in Headers */,
 				9E4A46678D8CAD55C679E098CAF5D159 /* KcHookProjectProtocol.h in Headers */,
 				590AD9E5C4BADF005A6983D6DFE3EB61 /* KcHookTool.h in Headers */,
 				9584E63D5D015EC13929EADA9A7349D0 /* KcMachOHelper.h in Headers */,
@@ -470,6 +482,7 @@
 				9B817078279A8A656D66F54D7B08B012 /* NSString+KcExtension.h in Headers */,
 				F45E915CD001F8C38658F0B9E19B5FF2 /* SMCallLib.h in Headers */,
 				3AEF9D151BEB4EAA3B361E50002C01A5 /* SMCallStack.h in Headers */,
+				C1EB19FE262E852100FF6AC1 /* UITableView+KcDebugTool.h in Headers */,
 				8B949E29C36B7E74404E93C5C91E8C2F /* UIApplication+KcDebugTool.h in Headers */,
 				A9CB0604300614431D7AB9AECC7C49BD /* UIView+KcDebugTool.h in Headers */,
 				BADB097C9C1593E7EEF0E1BBADCB5D93 /* UIViewController+KcDebugTool.h in Headers */,
@@ -618,6 +631,7 @@
 				10A1C06D6907238A733FC8B3D00FD73B /* KcMethodCallStack.m in Sources */,
 				0CA8E497B3D34FF985789CA221FD98D4 /* KcScrollViewTool.m in Sources */,
 				6F7024CBC7C4FCB992B550CBBDB4F487 /* NSMethodSignature+KcExtension.m in Sources */,
+				C1EB19FF262E852100FF6AC1 /* UITableView+KcDebugTool.m in Sources */,
 				4B1F660E4F45076BF0AFE4AD89FFE04E /* NSObject+KcMethodExtension.m in Sources */,
 				7B456A8A0F16020731AFF2C83303993B /* NSObject+KcRuntimeExtension.m in Sources */,
 				A6163D547E116B9D2B792FBB39A68E32 /* NSString+KcExtension.m in Sources */,
@@ -626,6 +640,7 @@
 				86E719B9B52939D35841A319A10B5F10 /* UIApplication+KcDebugTool.m in Sources */,
 				BDEC2B69D411436FAE5227E26B35A8DC /* UIView+KcDebugTool.m in Sources */,
 				EF0A892138CF2FC0B2B6444102820E8B /* UIViewController+KcDebugTool.m in Sources */,
+				C1EB1A06262E853200FF6AC1 /* UICollectionView+KcDebugTool.m in Sources */,
 				37E8CF73D25ABAAE25AF10AC3635235A /* UIWindow+KcDebugTool.m in Sources */,
 				DBDD1ABA34B6BD0F3C0B13C51E043A3D /* WKWebView+KcDebugTool.m in Sources */,
 			);
@@ -944,8 +959,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRIP_INSTALLED_PRODUCT = NO;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
 				SWIFT_VERSION = 5.0;
 				SYMROOT = "${SRCROOT}/../build";
 			};
