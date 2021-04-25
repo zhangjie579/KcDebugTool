@@ -51,8 +51,6 @@
 		AD2A6CA3B9533C3C5AA7FBD770F37961 /* KcFloatingWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = 1C3910F2B2CC827AAC5689F0E3E04BFE /* KcFloatingWindow.m */; };
 		BADB097C9C1593E7EEF0E1BBADCB5D93 /* UIViewController+KcDebugTool.h in Headers */ = {isa = PBXBuildFile; fileRef = F74599A271E32D91410E282E5E9397BC /* UIViewController+KcDebugTool.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BDEC2B69D411436FAE5227E26B35A8DC /* UIView+KcDebugTool.m in Sources */ = {isa = PBXBuildFile; fileRef = 59A33ECB518CB19A5B435C2BCA2F2DAC /* UIView+KcDebugTool.m */; };
-		C1BB63B326356B0900045A6C /* NSObject+DLIntrospection.m in Sources */ = {isa = PBXBuildFile; fileRef = C1BB63B126356B0900045A6C /* NSObject+DLIntrospection.m */; };
-		C1BB63B426356B0900045A6C /* NSObject+DLIntrospection.h in Headers */ = {isa = PBXBuildFile; fileRef = C1BB63B226356B0900045A6C /* NSObject+DLIntrospection.h */; };
 		C1EB19FE262E852100FF6AC1 /* UITableView+KcDebugTool.h in Headers */ = {isa = PBXBuildFile; fileRef = C1EB19FC262E852100FF6AC1 /* UITableView+KcDebugTool.h */; };
 		C1EB19FF262E852100FF6AC1 /* UITableView+KcDebugTool.m in Sources */ = {isa = PBXBuildFile; fileRef = C1EB19FD262E852100FF6AC1 /* UITableView+KcDebugTool.m */; };
 		C1EB1A05262E853200FF6AC1 /* UICollectionView+KcDebugTool.h in Headers */ = {isa = PBXBuildFile; fileRef = C1EB1A03262E853100FF6AC1 /* UICollectionView+KcDebugTool.h */; };
@@ -151,8 +149,6 @@
 		BCE2AAD74C00F14080D832A122032480 /* KcMachOHelper.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcMachOHelper.m; sourceTree = "<group>"; };
 		BD006862FFD2BD0677B3A63B08A55576 /* KcHookModel.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = KcHookModel.m; sourceTree = "<group>"; };
 		BE7F6DB5B58B44996B72BE949408CE81 /* Pods-KcDebugTool_Example.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-KcDebugTool_Example.debug.xcconfig"; sourceTree = "<group>"; };
-		C1BB63B126356B0900045A6C /* NSObject+DLIntrospection.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSObject+DLIntrospection.m"; sourceTree = "<group>"; };
-		C1BB63B226356B0900045A6C /* NSObject+DLIntrospection.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSObject+DLIntrospection.h"; sourceTree = "<group>"; };
 		C1EB19FC262E852100FF6AC1 /* UITableView+KcDebugTool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UITableView+KcDebugTool.h"; sourceTree = "<group>"; };
 		C1EB19FD262E852100FF6AC1 /* UITableView+KcDebugTool.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "UITableView+KcDebugTool.m"; sourceTree = "<group>"; };
 		C1EB1A03262E853100FF6AC1 /* UICollectionView+KcDebugTool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UICollectionView+KcDebugTool.h"; sourceTree = "<group>"; };
@@ -277,8 +273,6 @@
 				31E1A0D760D102EB79EA011EE756E01B /* NSObject+KcMethodExtension.m */,
 				94C472D3F02973635F320D108ED8A81B /* NSObject+KcRuntimeExtension.h */,
 				DEBEE7E7D987168D0B09A7F7F052D108 /* NSObject+KcRuntimeExtension.m */,
-				C1BB63B226356B0900045A6C /* NSObject+DLIntrospection.h */,
-				C1BB63B126356B0900045A6C /* NSObject+DLIntrospection.m */,
 				E4AD50BD8A38BC87719A72313A8F3827 /* NSString+KcExtension.h */,
 				07BB84E1CC4A9E993426DD9AE5936E0D /* NSString+KcExtension.m */,
 				D3ECD8198AE363F69A3A22911BC98F23 /* UIApplication+KcDebugTool.h */,
@@ -489,7 +483,6 @@
 				F45E915CD001F8C38658F0B9E19B5FF2 /* SMCallLib.h in Headers */,
 				3AEF9D151BEB4EAA3B361E50002C01A5 /* SMCallStack.h in Headers */,
 				C1EB19FE262E852100FF6AC1 /* UITableView+KcDebugTool.h in Headers */,
-				C1BB63B426356B0900045A6C /* NSObject+DLIntrospection.h in Headers */,
 				8B949E29C36B7E74404E93C5C91E8C2F /* UIApplication+KcDebugTool.h in Headers */,
 				A9CB0604300614431D7AB9AECC7C49BD /* UIView+KcDebugTool.h in Headers */,
 				BADB097C9C1593E7EEF0E1BBADCB5D93 /* UIViewController+KcDebugTool.h in Headers */,
@@ -644,7 +637,6 @@
 				A6163D547E116B9D2B792FBB39A68E32 /* NSString+KcExtension.m in Sources */,
 				FDAB9FA6DFF6CA78859D6A2E5852918E /* SMCallLib.m in Sources */,
 				A91E556DD33324223B86A2FF7D8E2A7F /* SMCallStack.m in Sources */,
-				C1BB63B326356B0900045A6C /* NSObject+DLIntrospection.m in Sources */,
 				86E719B9B52939D35841A319A10B5F10 /* UIApplication+KcDebugTool.m in Sources */,
 				BDEC2B69D411436FAE5227E26B35A8DC /* UIView+KcDebugTool.m in Sources */,
 				EF0A892138CF2FC0B2B6444102820E8B /* UIViewController+KcDebugTool.m in Sources */,
