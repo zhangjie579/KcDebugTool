@@ -116,12 +116,21 @@
         [tool kc_hookWithObjc:obj.key selectorName:obj.value withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
             UIViewController *fromViewController = [UIViewController kc_topViewControllerWithBaseViewController:info.instance];
             UIViewController * _Nullable toViewController = nil;
-            if ([obj.value isEqualToString:selectorNamePush] || [obj.value isEqualToString:selectorNamePresent]) {
+            
+            if ([obj.value isEqualToString:selectorNamePush] ||
+                [obj.value isEqualToString:selectorNamePresent]) {
+                
+                // push、present, 监听from对象的销毁 (这样会导致后面push的页面销毁, 并且不走pop逻辑)
+                [tool kc_hookWithObjc:info.instance selectorName:@"dealloc" withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull subInfo) {
+                    [KcLogParamModel logWithKey:@"跳转 - from对象dealloc - ⚠️" format:@"%@", subInfo.instance];
+                }];
+                
                 toViewController = [UIViewController kc_topViewControllerWithBaseViewController:info.arguments.firstObject];
                 if (showBlock) {
                     showBlock([toViewController class], fromViewController, toViewController);
                 }
-            } else if ([obj.value isEqualToString:selectorNameDismiss] || [obj.value isEqualToString:selectorNamePop]) {
+            } else if ([obj.value isEqualToString:selectorNameDismiss] ||
+                       [obj.value isEqualToString:selectorNamePop]) {
                 if (dismissBlock) {
                     dismissBlock(fromViewController);
                 }

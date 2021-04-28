@@ -75,6 +75,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// hook dealloc
 + (void)kc_hook_dealloc:(NSArray<NSString *> *)classNames block:(void(^)(KcHookAspectInfo *info))block;
 
++ (void)kc_hook_deallocWithBlock:(void(^)(KcHookAspectInfo *info))block;
+
 - (KcDeallocObserver *)kc_deallocObserverWithBlock:(void(^)(void))block;
 
 
