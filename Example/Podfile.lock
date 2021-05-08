@@ -1,32 +1,40 @@
 PODS:
-  - KcDebugTool (0.1.0):
-    - KcDebugTool/DebugTool (= 0.1.0)
-    - KcDebugTool/extension (= 0.1.0)
-    - KcDebugTool/model (= 0.1.0)
-    - KcDebugTool/other (= 0.1.0)
-    - KcDebugTool/sdk (= 0.1.0)
-    - KcDebugTool/View (= 0.1.0)
-  - KcDebugTool/DebugTool (0.1.0):
+  - fishhook (0.2)
+  - KcDebugTool (0.0.1):
+    - KcDebugTool/DebugTool (= 0.0.1)
+    - KcDebugTool/extension (= 0.0.1)
+    - KcDebugTool/model (= 0.0.1)
+    - KcDebugTool/other (= 0.0.1)
+    - KcDebugTool/sdk (= 0.0.1)
+    - KcDebugTool/View (= 0.0.1)
+  - KcDebugTool/DebugTool (0.0.1):
     - KcDebugTool/extension
     - KcDebugTool/other
-  - KcDebugTool/extension (0.1.0):
+    - KcDebugTool/View
+  - KcDebugTool/extension (0.0.1):
     - KcDebugTool/model
-  - KcDebugTool/model (0.1.0):
+  - KcDebugTool/model (0.0.1):
     - KcDebugTool/sdk
-  - KcDebugTool/other (0.1.0)
-  - KcDebugTool/sdk (0.1.0)
-  - KcDebugTool/View (0.1.0)
+  - KcDebugTool/other (0.0.1)
+  - KcDebugTool/sdk (0.0.1)
+  - KcDebugTool/View (0.0.1)
 
 DEPENDENCIES:
+  - fishhook
   - KcDebugTool (from `../`)
+
+SPEC REPOS:
+  trunk:
+    - fishhook
 
 EXTERNAL SOURCES:
   KcDebugTool:
     :path: "../"
 
 SPEC CHECKSUMS:
-  KcDebugTool: 779315d4c03fafcae8d4a918d1688f7d3298fd4a
+  fishhook: ea19933abfe8f2f52c55fd8b6e2718467d3ebc89
+  KcDebugTool: 4fb89e9d6c8c7baaf1eca8ab5fea681f8ef3146d
 
-PODFILE CHECKSUM: a5f8ddf828ec1016e55c94d9a3bfb63baa5fb68a
+PODFILE CHECKSUM: 942e8533fbb03875339a144cf41ca2b31ec45bdd
 
 COCOAPODS: 1.10.1

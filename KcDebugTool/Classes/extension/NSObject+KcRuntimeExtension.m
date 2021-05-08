@@ -332,7 +332,7 @@ bool kc_classIsCustomClass(Class aClass);
 
 + (void)kc_hook_deallocWithBlock:(void(^)(KcHookAspectInfo *info))block {
     id<KcAspectable> manager = KcHookTool.manager;
-    [manager kc_hookWithObjc:self selector:NSSelectorFromString(@"dealloc") withOptions:KcAspectTypeBefore usingBlock:block error:nil]
+    [manager kc_hookWithObjc:self selector:NSSelectorFromString(@"dealloc") withOptions:KcAspectTypeBefore usingBlock:block error:nil];
 }
 
 - (KcDeallocObserver *)kc_deallocObserverWithBlock:(void(^)(void))block {

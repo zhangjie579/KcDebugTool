@@ -846,6 +846,18 @@ static NSArray<NSString *> *kc_methodNamesNavigation() {
 };
 
 #pragma mark - 判断是否能hook
+
+/// 允许hook的白名单
+static NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *allowedClassSelectorList;
+
+/// 是否是白名单
+static BOOL kc_isWhiteClassSelectorList(id objc, SEL selector) {
+    if ([allowedClassSelectorList[NSStringFromClass([objc class])] containsObject:NSStringFromSelector(selector)]) {
+        return YES;
+    }
+    return NO;
+}
+
 /* 判断selector是否能hook
  1.黑名单(retain, release, autorelease, forwardInvocation:)不能hook
  2.dealloc只能在它执行之前添加操作
@@ -862,7 +874,18 @@ static BOOL aspect_isSelectorAllowedAndTrack(NSObject *self, SEL selector, KcAsp
     static dispatch_once_t pred;
     dispatch_once(&pred, ^{
         disallowedSelectorList = [NSSet setWithObjects:@"retain", @"release", @"autorelease", @"forwardInvocation:", nil];
+        allowedClassSelectorList = [@{
+//            // 监听手势
+//            @"UIGestureRecognizerTarget": [NSMutableSet setWithArray:@[
+//                @"_sendActionWithGestureRecognizer:",
+//            ]],
+        } mutableCopy];
     });
+    
+//    // 0.1.白名单
+//    if (kc_isWhiteClassSelectorList(self, selector)) {
+//        return YES;
+//    }
 
     // 1.Check against the blacklist.(黑名单)
     NSString *selectorName = NSStringFromSelector(selector);

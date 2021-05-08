@@ -60,7 +60,7 @@ __attribute__((constructor)) void kc_hookDebugClass() {
 //    }];
     
     // gesture 看log 👻
-//    [NSObject kc_hook_gestureRecognizerSendActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+//    [NSObject kc_hook_gestureRecognizerAllTargetActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 //
 //    }];
     
@@ -118,6 +118,10 @@ __attribute__((constructor)) void kc_hookDebugClass() {
             }];
         }];
     }
+    
+//    [NSObject kc_hook_gestureRecognizerAllTargetActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        
+//    }];
 }
 
 /// hook一些class的所有方法

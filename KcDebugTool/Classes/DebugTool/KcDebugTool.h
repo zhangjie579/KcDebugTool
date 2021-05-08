@@ -8,6 +8,7 @@
 
 #import <Foundation/Foundation.h>
 #import "KcHookClassManager.h"
+#import "KcDebugLayout.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

@@ -151,7 +151,7 @@
 
 // -------- UIGestureRecognizer
 
-/* UIGestureRecognizer 事件调用方法
+/* UIGestureRecognizer 事件调用方法 (系统把方法隐藏了, hook 无效⚠️, 符号断点有用)
 __CFRunLoopDoSource0
 -[UIApplication sendEvent:]
 -[UIWindow sendEvent:]
@@ -199,7 +199,10 @@ _UIGestureRecognizerSendTargetActions
         id target = info.arguments.firstObject;
         id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
         
-        [self kc_hook_customClassWithTarget:target action:action block:block];
+        [self kc_hook_customClassWithTarget:target
+                                     action:action
+                                logIdentity:@"UIGestureRecognizer"
+                                      block:block];
     } error:nil];
 }
 
@@ -212,7 +215,10 @@ _UIGestureRecognizerSendTargetActions
         id target = info.arguments.firstObject;
         id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
         
-        [self kc_hook_customClassWithTarget:target action:action block:block];
+        [self kc_hook_customClassWithTarget:target
+                                     action:action
+                                logIdentity:@"UIGestureRecognizer"
+                                      block:block];
     } error:nil];
 }
 
@@ -222,7 +228,8 @@ _UIGestureRecognizerSendTargetActions
                              selector:@selector(setEnabled:)
                           withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        [KcLogParamModel logWithString:[NSString stringWithFormat:@"UIGestureRecognizer %@ enable: %@", info.instance, info.arguments[0]]];
+        [KcLogParamModel logWithKey:@"UIGestureRecognizer.enable"
+                             format:@"%@ enable: %@", info.instance, info.arguments[0]];
         if (block) {
             block(info);
         }
@@ -230,13 +237,6 @@ _UIGestureRecognizerSendTargetActions
 }
 
 /// hook 自定义方法的target/action
-
-+ (void)kc_hook_customClassWithTarget:(id)target
-                              action:(id)action
-                               block:(void(^)(KcHookAspectInfo *info))block {
-    [self kc_hook_customClassWithTarget:target action:action logIdentity:@"UIGestureRecognizer" block:block];
-}
-
 + (void)kc_hook_customClassWithTarget:(id)target
                               action:(id)action
                          logIdentity:(NSString *)logIdentity
@@ -254,7 +254,8 @@ _UIGestureRecognizerSendTargetActions
                          selectorName:action
                           withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        [KcLogParamModel logWithKey:logIdentity format:@"target: %@, action: %@", logIdentity, info.className, info.selectorName];
+        [KcLogParamModel logWithKey:logIdentity
+                             format:@"target: %@, action: %@", info.className, info.selectorName];
 
         if (block) {
             block(info);
@@ -299,7 +300,8 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
                                  selector:selector
                               withOptions:KcAspectTypeBefore
                                usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-            [KcLogParamModel logWithKey:@"NSNotificationCenter" format:@"target: %@, action: %@", info.className, info.selectorName];
+            [KcLogParamModel logWithKey:@"NSNotificationCenter"
+                                 format:@"target: %@, action: %@", info.className, info.selectorName];
             if (block) {
                 block(info);
             }
@@ -321,7 +323,7 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
     id action = info.arguments.firstObject;
     id target = info.arguments.count >= 2 ? info.arguments[1] : nil;
     
-    [KcLogParamModel logWithString:[NSString stringWithFormat:@" sendAction: %@, target: %@", action, target]];
+    [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, target: %@", action, target];
 }
 
 @end
