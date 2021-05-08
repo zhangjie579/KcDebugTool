@@ -759,7 +759,11 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
     
     info.duration = CFAbsoluteTimeGetCurrent() - currentTime;
     
-    kc_pop_call_record(invocation.target, invocation.selector);
+    // 因为invocation的target是assign修饰, 销毁了也不会释放指针(野指针)⚠️
+    NSString *selectorName = NSStringFromSelector(invocation.selector);
+    if (![selectorName hasSuffix:@"dealloc"]) {
+        kc_pop_call_record(invocation.target, invocation.selector);
+    }
 
     // 10.After hooks.
     aspect_invoke(classContainer.afterAspects, info);
