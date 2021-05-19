@@ -53,4 +53,36 @@
     } error:nil];
 }
 
+/// 监听自动调整contentInset
++ (void)kc_hook_adjustedContentInset {
+    KcHookTool *tool = [[KcHookTool alloc] init];
+    
+    [tool kc_hookWithObjc:UITableView.class
+                 selector:@selector(setContentInset:)
+              withOptions:KcAspectTypeBefore
+               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [KcLogParamModel logWithKey:@"adjustedContentInset"
+                             format:@"contentInset: %@", info.arguments.firstObject ?: @""];
+    } error:nil];
+    
+    if (@available(iOS 11.0, *)) {
+        [tool kc_hookWithObjc:UITableView.class
+                     selector:@selector(setContentInsetAdjustmentBehavior:)
+                  withOptions:KcAspectTypeBefore
+                   usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+            [KcLogParamModel logWithKey:@"adjustedContentInset"
+                                 format:@"adjustmentBehavior: %@", info.arguments.firstObject ?: @""];
+        } error:nil];
+        
+        [tool kc_hookWithObjc:UITableView.class
+                     selector:@selector(adjustedContentInsetDidChange)
+                  withOptions:KcAspectTypeBefore
+                   usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+            UIEdgeInsets adjustedContentInset = [info.instance adjustedContentInset];
+            [KcLogParamModel logWithKey:@"adjustedContentInset"
+                                 format:@"adjustedContentInsetDidChange: %@", NSStringFromUIEdgeInsets(adjustedContentInset)];
+        } error:nil];
+    }
+}
+
 @end

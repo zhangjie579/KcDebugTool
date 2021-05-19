@@ -21,6 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// tableView dataSource
 + (void)kc_hook_dataSourceWithBlock:(void(^ _Nullable)(KcHookAspectInfo * _Nonnull info))block;
 
+/// 监听自动调整contentInset
++ (void)kc_hook_adjustedContentInset;
+
 @end
 
 NS_ASSUME_NONNULL_END

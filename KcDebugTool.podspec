@@ -70,6 +70,10 @@ TODO: Add long description of the pod here.
 #      m.dependency 'TrampolineHook'
   end
   
+  s.subspec 'MachO' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/MachO/**/*'
+  end
+  
   # 全部依赖了
   s.subspec 'DebugTool' do |d|
       d.source_files = 'KcDebugTool/Classes/DebugTool/**/*'
@@ -77,6 +81,7 @@ TODO: Add long description of the pod here.
       d.dependency 'KcDebugTool/extension'
       d.dependency 'KcDebugTool/other'
       d.dependency 'KcDebugTool/View'
+      d.dependency 'KcDebugTool/MachO'
 #      m.dependency 'TrampolineHook'
   end
 

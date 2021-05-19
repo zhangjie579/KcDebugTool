@@ -7,8 +7,19 @@
 //
 
 #import "KCViewController.h"
+#import <dlfcn.h>
+#import <mach-o/dyld.h>
+#import <mach-o/arch.h>
+#import <mach-o/getsect.h>
+
+#import <objc/message.h>
 #import "KcDebugTool.h"
 #import "fishhook.h"
+
+#import "KcMachO.h"
+//#import "KcDebugTool_Example-Swift.h"
+
+@import KcDebugTool;
 
 @interface KCViewController ()
 
@@ -46,16 +57,18 @@
     [self.view addSubview:self.v1];
     self.v1.frame = CGRectMake(100, 100, 100, 100);
     
+//    [KcMachO log_sectionDataWithImageName:@"KcDebugTool_Example"];
+    [KcMachOHelper log_symbolTableWithImageName:@"KcDebugTool_Example"];
+    
+    NSLog(@"");
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self test1];
 }
 
 - (void)test1 {
-    KcHookTool *tool = [[KcHookTool alloc] init];
-    
-    // -[UIGestureRecognizer _updateGestureForActiveEvents] ()
-
-    [tool kc_hookWithObjc:UIGestureRecognizer.class selectorName:@"_updateGestureForActiveEvents" withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        
-    }];
+    NSLog(@"%s", _cmd);
 }
 
 - (void)tapClick {

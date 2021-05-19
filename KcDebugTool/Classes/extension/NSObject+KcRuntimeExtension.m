@@ -240,87 +240,236 @@ bool kc_classIsCustomClass(Class aClass);
     // 遍历ivar
     Ivar *ivars = class_copyIvarList([self class], &count);
     for (unsigned int i = 0; i < count; i++) {
-    Ivar ivar = ivars[i];
+        Ivar ivar = ivars[i];
 
-    const char *name = ivar_getName(ivar);
-    const char *type = ivar_getTypeEncoding(ivar);
-    ptrdiff_t offset = ivar_getOffset(ivar);
+        const char *name = ivar_getName(ivar);
+        const char *type = ivar_getTypeEncoding(ivar);
+        ptrdiff_t offset = ivar_getOffset(ivar);
 
-    if (strncmp(type, @encode(char), 1) == 0) {
-      char value = *(char *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %c", name, value]];
-    }
-    else if (strncmp(type, @encode(int), 1) == 0) {
-      int value = *(int *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %d", name, value]];
-    }
-    else if (strncmp(type, @encode(short), 1) == 0) {
-      short value = *(short *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %hd", name, value]];
-    }
-    else if (strncmp(type, @encode(long), 1) == 0) {
-      long value = *(long *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %ld", name, value]];
-    }
-    else if (strncmp(type, @encode(long long), 1) == 0) {
-      long long value = *(long long *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %lld", name, value]];
-    }
-    else if (strncmp(type, @encode(unsigned char), 1) == 0) {
-      unsigned char value = *(unsigned char *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %c", name, value]];
-    }
-    else if (strncmp(type, @encode(unsigned int), 1) == 0) {
-      unsigned int value = *(unsigned int *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %u", name, value]];
-    }
-    else if (strncmp(type, @encode(unsigned short), 1) == 0) {
-      unsigned short value = *(unsigned short *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %hu", name, value]];
-    }
-    else if (strncmp(type, @encode(unsigned long), 1) == 0) {
-      unsigned long value = *(unsigned long *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %lu", name, value]];
-    }
-    else if (strncmp(type, @encode(unsigned long long), 1) == 0) {
-      unsigned long long value = *(unsigned long long *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %llu", name, value]];
-    }
-    else if (strncmp(type, @encode(float), 1) == 0) {
-      float value = *(float *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %f", name, value]];
-    }
-    else if (strncmp(type, @encode(double), 1) == 0) {
-      double value = *(double *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %e", name, value]];
-    }
-    else if (strncmp(type, @encode(bool), 1) == 0) {
-      bool value = *(bool *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %d", name, value]];
-    }
-    else if (strncmp(type, @encode(char *), 1) == 0) {
-      char * value = *(char * *)((uintptr_t)self + offset);
-      [result addObject: [NSString stringWithFormat:@"%s = %s", name, value]];
-    }
-    else if (strncmp(type, @encode(id), 1) == 0) {
-      id value = object_getIvar(self, ivar);
-      [result addObject: [NSString stringWithFormat:@"%s = %@", name, value]];
-    }
-    else if (strncmp(type, @encode(Class), 1) == 0) {
-      id value = object_getIvar(self, ivar);
-      [result addObject: [NSString stringWithFormat:@"%s = %@", name, value]];
-    }
-    // todo
-    // SEL
-    // struct
-    // array
-    // union
-    // bit
-    // field of num bits
-    // pointer to type
+        if (strncmp(type, @encode(char), 1) == 0) {
+            char value = *(char *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %c", name, value]];
+        }
+        else if (strncmp(type, @encode(int), 1) == 0) {
+            int value = *(int *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %d", name, value]];
+        }
+        else if (strncmp(type, @encode(short), 1) == 0) {
+            short value = *(short *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %hd", name, value]];
+        }
+        else if (strncmp(type, @encode(long), 1) == 0) {
+            long value = *(long *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %ld", name, value]];
+        }
+        else if (strncmp(type, @encode(long long), 1) == 0) {
+            long long value = *(long long *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %lld", name, value]];
+        }
+        else if (strncmp(type, @encode(unsigned char), 1) == 0) {
+            unsigned char value = *(unsigned char *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %c", name, value]];
+        }
+        else if (strncmp(type, @encode(unsigned int), 1) == 0) {
+            unsigned int value = *(unsigned int *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %u", name, value]];
+        }
+        else if (strncmp(type, @encode(unsigned short), 1) == 0) {
+            unsigned short value = *(unsigned short *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %hu", name, value]];
+        }
+        else if (strncmp(type, @encode(unsigned long), 1) == 0) {
+            unsigned long value = *(unsigned long *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %lu", name, value]];
+        }
+        else if (strncmp(type, @encode(unsigned long long), 1) == 0) {
+            unsigned long long value = *(unsigned long long *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %llu", name, value]];
+        }
+        else if (strncmp(type, @encode(float), 1) == 0) {
+            float value = *(float *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %f", name, value]];
+        }
+        else if (strncmp(type, @encode(double), 1) == 0) {
+            double value = *(double *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %e", name, value]];
+        }
+        else if (strncmp(type, @encode(bool), 1) == 0) {
+            bool value = *(bool *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %d", name, value]];
+        }
+        else if (strncmp(type, @encode(char *), 1) == 0) {
+            char * value = *(char * *)((uintptr_t)self + offset);
+            [result addObject: [NSString stringWithFormat:@"%s = %s", name, value]];
+        }
+        else if (strncmp(type, @encode(id), 1) == 0) {
+            id value = object_getIvar(self, ivar);
+            [result addObject: [NSString stringWithFormat:@"%s = %@", name, value]];
+        }
+        else if (strncmp(type, @encode(Class), 1) == 0) {
+            id value = object_getIvar(self, ivar);
+            [result addObject: [NSString stringWithFormat:@"%s = %@", name, value]];
+        }
+        // todo
+        // SEL
+        // struct
+        // array
+        // union
+        // bit
+        // field of num bits
+        // pointer to type
     }
     free(ivars);
     return [result copy];
+}
+
+/// 求出ivar的address
+- (UInt64)kc_ivarAddressWithName:(NSString *)ivarName {
+    UInt64 address = -1;
+    
+    NSString *propertyName = ivarName.copy;
+    if ([propertyName hasPrefix:@"_"]) {
+        propertyName = [propertyName substringFromIndex:1];
+    }
+    
+    unsigned int count;
+    // 遍历ivar
+    Ivar *ivars = class_copyIvarList([self class], &count);
+    for (unsigned int i = 0; i < count; i++) {
+        Ivar ivar = ivars[i];
+
+        NSString *name = @(ivar_getName(ivar));
+        if ([name hasPrefix:@"_"]) {
+            name = [name substringFromIndex:1];
+        }
+        
+//        const char *type = ivar_getTypeEncoding(ivar);
+        ptrdiff_t offset = ivar_getOffset(ivar);
+        
+        if ([propertyName isEqualToString:name]) {
+            address = (UInt64)self + offset;
+            break;
+        }
+    }
+    
+    free(ivars);
+    
+    return address;
+}
+
+/// 根据内存偏移量求值
++ (id)kc_valueWithContentObjc:(NSObject *)objc offset:(UInt64)offset {
+    void *pointer = *(void **)((UInt64)objc + offset);
+    
+    return (__bridge id)pointer;
+}
+
+/// log ivar的属性
+/// 比如: char *value = *(char **)((uintptr_t)self + offset)
+- (NSString *)kc_ivarInfoWithName:(NSString *)ivarName {
+    NSMutableString *mutableString = [NSMutableString string];
+    
+    if ([ivarName hasPrefix:@"_"]) {
+        ivarName = [ivarName substringFromIndex:1];
+    }
+    
+    unsigned int count;
+    // 遍历ivar
+    Ivar *ivars = class_copyIvarList([self class], &count);
+    for (unsigned int i = 0; i < count; i++) {
+        Ivar ivar = ivars[i];
+
+        NSString *name = @(ivar_getName(ivar));
+        if ([name hasPrefix:@"_"]) {
+            name = [name substringFromIndex:1];
+        }
+        
+        if (![ivarName isEqualToString:name]) {
+            continue;
+        }
+        
+        const char *type = ivar_getTypeEncoding(ivar);
+        ptrdiff_t offset = ivar_getOffset(ivar);
+
+        [mutableString appendFormat:@"name: %@, type: %s, offset: %td, address: %lu ", name, type, offset, (uintptr_t)self + offset];
+        
+        if (strncmp(type, @encode(char), 1) == 0) {
+            char value = *(char *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %c", value];
+        }
+        else if (strncmp(type, @encode(int), 1) == 0) {
+            int value = *(int *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %d", value];
+        }
+        else if (strncmp(type, @encode(short), 1) == 0) {
+            short value = *(short *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %hd", value];
+        }
+        else if (strncmp(type, @encode(long), 1) == 0) {
+            long value = *(long *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %ld", value];
+        }
+        else if (strncmp(type, @encode(long long), 1) == 0) {
+            long long value = *(long long *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %lld", value];
+        }
+        else if (strncmp(type, @encode(unsigned char), 1) == 0) {
+            unsigned char value = *(unsigned char *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %c", value];
+        }
+        else if (strncmp(type, @encode(unsigned int), 1) == 0) {
+            unsigned int value = *(unsigned int *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %u", value];
+        }
+        else if (strncmp(type, @encode(unsigned short), 1) == 0) {
+            unsigned short value = *(unsigned short *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %hu", value];
+        }
+        else if (strncmp(type, @encode(unsigned long), 1) == 0) {
+            unsigned long value = *(unsigned long *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %lu", value];
+        }
+        else if (strncmp(type, @encode(unsigned long long), 1) == 0) {
+            unsigned long long value = *(unsigned long long *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %llu", value];
+        }
+        else if (strncmp(type, @encode(float), 1) == 0) {
+            float value = *(float *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %f", value];
+        }
+        else if (strncmp(type, @encode(double), 1) == 0) {
+            double value = *(double *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %e", value];
+        }
+        else if (strncmp(type, @encode(bool), 1) == 0) {
+            bool value = *(bool *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %d", value];
+        }
+        else if (strncmp(type, @encode(char *), 1) == 0) {
+            char * value = *(char * *)((uintptr_t)self + offset);
+            [mutableString appendFormat:@"value = %s", value];
+        }
+        else if (strncmp(type, @encode(id), 1) == 0) {
+            id value = object_getIvar(self, ivar);
+            [mutableString appendFormat:@"value = %@", value];
+        }
+        else if (strncmp(type, @encode(Class), 1) == 0) {
+            id value = object_getIvar(self, ivar);
+            [mutableString appendFormat:@"value = %@", value];
+        }
+        // todo
+        // SEL
+        // struct
+        // array
+        // union
+        // bit
+        // field of num bits
+        // pointer to type
+        
+        break;
+    }
+    free(ivars);
+    return mutableString.copy;
 }
 
 #pragma mark - dealloc

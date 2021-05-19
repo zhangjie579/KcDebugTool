@@ -208,6 +208,12 @@ _UIGestureRecognizerSendTargetActions
 
 /// hook UIGestureRecognizer的initWithTarget方式的event
 + (void)kc_hook_gestureRecognizerInitTargetActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
+    /*
+     1.UIGestureRecognizer - _targets: [UIGestureRecognizerTarget]
+     2.UIGestureRecognizerTarget
+        * SEL action;
+        * id target;
+     */
     [self.kc_hookTool kc_hookWithObjc:[UIGestureRecognizer class]
                              selector:@selector(initWithTarget:action:)
                           withOptions:KcAspectTypeBefore

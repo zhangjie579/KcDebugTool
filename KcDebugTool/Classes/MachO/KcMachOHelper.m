@@ -12,8 +12,14 @@
 #import <mach-o/dyld.h>
 #import <mach-o/arch.h>
 #import <mach-o/getsect.h>
+#import <stdlib.h>
+#import <string.h>
+#import <sys/types.h>
 
 @implementation KcMachOHelper
+
+static char includeObjcClasses[] = {"CN"};
+static char objcClassPrefix[] = {"_OBJC_CLASS_$_"};
 
 + (const char *)imageNameWithClass:(Class)cls {
     return class_getImageName(cls);
@@ -275,15 +281,164 @@
 //    return objectArray;
 //}
 
+/// 获取符号表的数据
++ (void)log_symbolTableWithImageName:(NSString *)imageName {
+    void(^findSymbolTableFromMachO)(UInt32 i) = ^(UInt32 i) {
+        kc_mach_header_t *header = (kc_mach_header_t *)_dyld_get_image_header(i);
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        
+        Dl_info info;
+        if (dladdr(header, &info) == 0) {
+            return;
+        }
+        
+        kc_segment_command_t *cur_seg_cmd;
+        kc_segment_command_t *linkedit_segment = NULL;
+        struct symtab_command* symtab_cmd = NULL;
+//        kc_segment_command_t * seg_text = NULL;
+        
+        // 1.找到符号表
+        intptr_t cur = (uintptr_t)header + sizeof(kc_mach_header_t);
+        for (uint i = 0; i < header->ncmds; i++, cur += cur_seg_cmd->cmdsize) {
+            cur_seg_cmd = (kc_segment_command_t *)cur;
+            
+            if (cur_seg_cmd->cmd == KC_SEGMENT_ARCH_DEPENDENT) {
+                if (strcmp(cur_seg_cmd->segname, SEG_LINKEDIT) == 0) {
+                    linkedit_segment = cur_seg_cmd;
+                }
+//                else if (strcmp(cur_seg_cmd->segname, SEG_TEXT) == 0) { // __TEXT
+//                    seg_text = cur_seg_cmd;
+//                }
+            } else if (cur_seg_cmd->cmd == LC_SYMTAB) {
+                symtab_cmd = (struct symtab_command*)cur_seg_cmd;
+            }
+        }
+        
+        // 等于 (uintptr_t)header
+        uintptr_t linkedit_base = (uintptr_t)slide + linkedit_segment->vmaddr - linkedit_segment->fileoff;
+        kc_nlist_t *symtab = (kc_nlist_t *)(linkedit_base + symtab_cmd->symoff);
+        char *strtab = (char *)(linkedit_base + symtab_cmd->stroff);
+        
+        for (UInt64 i = 0; i < symtab_cmd->nsyms; i++) {
+            kc_nlist_t entries = symtab[i];
+            // 因为symtab的地址 + slide, so 同MachOView一致, 这里 - slide
+            UInt64 entriesAddress = (UInt64)symtab + sizeof(kc_nlist_t) * i - slide;
+            
+            char *symbol_name = strtab + entries.n_un.n_strx;
+            /* 真实地址需要加slide⚠️
+             比如:
+             slide:             0x000000000854c000
+             header:            0x000000010854c000
+             symbol_address:    0x0000000100001280
+             seg_text->vmaddr:  0x0000000100000000
+             
+             slide = header - seg_text->vmaddr
+             */
+            UInt64 symbol_address = entries.n_value;
+            
+            NSLog(@"name: %s, value: 0x%x, 真实符号地址: 0x%x element offset: 0x%x", symbol_name, symbol_address, symbol_address + slide, entriesAddress);
+        }
+    };
+    
+    uint32_t count = _dyld_image_count();
+    
+    for (uint32_t i = 0; i < count; i++) {
+        const char *path = _dyld_get_image_name(i);
+        NSString *imagePath = [NSString stringWithUTF8String:path];
+
+        if (![imagePath hasSuffix:imageName]) {
+            continue;
+        }
+        
+        findSymbolTableFromMachO(i);
+    }
+}
+
+/// 查找swift符号
+/// 原理: 遍历symbol table, 根据swift class name特定的特征
++ (void)findSwiftSymbolsWithBundlePath:(const char *)bundlePath
+                                suffix:(const char *)suffix
+                              callback:(void (^)(const void *symval, const char *symname, void *typeref, void *typeend))callback {
+    // 1.遍历镜像image
+    for (int32_t i = _dyld_image_count(); i >= 0 ; i--) {
+        const char *imageName = _dyld_get_image_name(i);
+        // 2.比较bundlePath
+        if (!(imageName && (!bundlePath || imageName == bundlePath ||
+                            strcmp(imageName, bundlePath) == 0)))
+            continue;
+        
+        const kc_mach_header_t *header =
+            (const kc_mach_header_t *)_dyld_get_image_header(i);
+        kc_segment_command_t *seg_linkedit = NULL; // __LINKEDIT
+        kc_segment_command_t *seg_text = NULL; // __TEXT
+        struct symtab_command *symtab = NULL; // 符号表
+        
+        // 3.遍历__Text, __swift5_typeref 段
+        // to filter associated type witness entries
+        uint64_t typeref_size = 0;
+        char *typeref_start = getsectdatafromheader_f(header, SEG_TEXT,
+                                            "__swift5_typeref", &typeref_size);
+
+        // 4.load_command = header + struct header size
+        struct load_command *cmd =
+            (struct load_command *)((intptr_t)header + sizeof(kc_mach_header_t));
+        // 5.遍历load_command
+        for (uint32_t i = 0; i < header->ncmds; i++,
+             cmd = (struct load_command *)((intptr_t)cmd + cmd->cmdsize)) {
+            switch(cmd->cmd) {
+                case LC_SEGMENT:
+                case LC_SEGMENT_64:
+                    if (!strcmp(((kc_segment_command_t *)cmd)->segname, SEG_TEXT)) // __TEXT
+                        seg_text = (kc_segment_command_t *)cmd;
+                    else if (!strcmp(((kc_segment_command_t *)cmd)->segname, SEG_LINKEDIT)) // __LINKEDIT
+                        seg_linkedit = (kc_segment_command_t *)cmd;
+                    break;
+
+                case LC_SYMTAB: { // 符号表
+                    symtab = (struct symtab_command *)cmd;
+                    intptr_t file_slide = ((intptr_t)seg_linkedit->vmaddr - (intptr_t)seg_text->vmaddr) - seg_linkedit->fileoff; // 这个还有不是 = 0的时候 ❓
+                    // 字符串表
+                    const char *strings = (const char *)header +
+                                               (symtab->stroff + file_slide);
+                    // 符号表
+                    kc_nlist_t *sym = (kc_nlist_t *)((intptr_t)header +
+                                               (symtab->symoff + file_slide));
+                    
+                    // ❓❓❓
+                    size_t sufflen = strlen(suffix);
+                    BOOL witnessFuncSearch = strcmp(suffix+sufflen-2, "Wl") == 0 ||
+                                             strcmp(suffix+sufflen-5, "pACTK") == 0;
+                    uint8_t symbolVisibility = witnessFuncSearch ? 0x1e : 0xf; // 符号可见性
+
+                    for (uint32_t i = 0; i < symtab->nsyms; i++, sym++) {
+                        // 符号name = 字符串表 + offset
+                        const char *symname = strings + sym->n_un.n_strx;
+                        void *address;
+
+                        if (sym->n_type == symbolVisibility &&
+                            ((strncmp(symname, "_$s", 3) == 0 && // 都以_$s开头
+                              strcmp(symname+strlen(symname)-sufflen, suffix) == 0) ||
+                             (suffix == includeObjcClasses && strncmp(symname,
+                              objcClassPrefix, sizeof objcClassPrefix-1) == 0)) &&
+                            (address = (void *)(sym->n_value +
+                             (intptr_t)header - (intptr_t)seg_text->vmaddr))) {
+                            // slide = (uintptr_t)header - (segment->vmaddr - segment->fileoff), 因为text段的fileoff = 0, so不需要 -
+                            callback(address, symname+1, typeref_start,
+                                     typeref_start + typeref_size);
+                        }
+                    }
+
+                    if (bundlePath)
+                        return;
+                }
+            }
+        }
+    }
+}
+
 @end
 
 @implementation NSObject (KcMachO)
-
-#ifdef __LP64__
-typedef struct mach_header_64 kc_macho_header;
-#else
-typedef struct mach_header kc_macho_header;
-#endif
 
 /// 所有自定义class
 + (NSMutableArray<Class> *)kc_allCustomClasses {
@@ -366,7 +521,7 @@ typedef struct mach_header kc_macho_header;
             }
         }
         
-        const kc_macho_header *header = (const kc_macho_header *)_dyld_get_image_header(idx);
+        const kc_mach_header_t *header = (const kc_mach_header_t *)_dyld_get_image_header(idx);
         
         void *data = getsectiondata(header, segname, sectname, size);
         return data;

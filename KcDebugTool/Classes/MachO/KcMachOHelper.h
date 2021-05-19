@@ -7,8 +7,27 @@
 //
 
 #import <UIKit/UIKit.h>
+#import <mach-o/loader.h>
+#import <mach-o/nlist.h>
 
 NS_ASSUME_NONNULL_BEGIN
+
+#ifdef __LP64__
+typedef struct mach_header_64 kc_mach_header_t;
+typedef struct segment_command_64 kc_segment_command_t;
+typedef struct section_64 kc_section_t;
+typedef struct nlist_64 kc_nlist_t;
+#define KC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT_64
+#define getsectdatafromheader_f getsectdatafromheader_64
+#else
+typedef struct mach_header kc_mach_header_t;
+typedef struct segment_command kc_segment_command_t;
+typedef struct section kc_section_t;
+typedef struct nlist kc_nlist_t;
+#define KC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT
+#define getsectdatafromheader_f getsectdatafromheader
+#endif
+
 
 @interface KcMachOHelper : NSObject
 
@@ -42,6 +61,15 @@ NS_ASSUME_NONNULL_BEGIN
  }
  */
 + (NSDictionary<NSString *, id> *)dyldImageInfo;
+
+/// 获取符号表的数据
++ (void)log_symbolTableWithImageName:(NSString *)imageName;
+
+/// 查找swift符号
+/// 原理: 遍历symbol table, 根据swift class name特定的特征
++ (void)findSwiftSymbolsWithBundlePath:(const char *)bundlePath
+                                suffix:(const char *)suffix
+                              callback:(void (^)(const void *symval, const char *symname, void *typeref, void *typeend))callback;
 
 @end
 

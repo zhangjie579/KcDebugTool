@@ -70,6 +70,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (NSArray<NSString *> *)kc_logAllIvars;
 
+/// 根据内存偏移量求值
++ (id)kc_valueWithContentObjc:(NSObject *)objc offset:(UInt64)offset;
+
+/// 求出ivar的address
+- (UInt64)kc_ivarAddressWithName:(NSString *)ivarName;
+
+/// log ivar的属性
+/// 比如: char *value = *(char **)((uintptr_t)self + offset)
+- (NSString *)kc_ivarInfoWithName:(NSString *)ivarName;
+
 #pragma mark - dealloc
 
 /// hook dealloc
