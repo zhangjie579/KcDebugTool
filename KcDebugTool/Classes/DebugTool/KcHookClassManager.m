@@ -120,7 +120,7 @@ __attribute__((constructor)) void kc_hookDebugClass() {
     }
     
 //    [NSObject kc_hook_gestureRecognizerAllTargetActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
-//        
+//
 //    }];
 }
 

@@ -58,7 +58,7 @@
     self.v1.frame = CGRectMake(100, 100, 100, 100);
     
 //    [KcMachO log_sectionDataWithImageName:@"KcDebugTool_Example"];
-    [KcMachOHelper log_symbolTableWithImageName:@"KcDebugTool_Example"];
+//    [KcMachOHelper log_symbolTableWithImageName:@"KcDebugTool_Example"];
     
     NSLog(@"");
 }
