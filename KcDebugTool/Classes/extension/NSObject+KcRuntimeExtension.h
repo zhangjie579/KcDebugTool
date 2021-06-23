@@ -96,6 +96,13 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)kc_isMetaClass:(id)object;
 /// 是否是class
 + (BOOL)kc_isClass:(id)object;
+/// 是否是swift class
++ (BOOL)kc_isSwiftClass:(id)objc;
+/// 是否是swift值类型
++ (BOOL)kc_isSwiftValueWithObjc:(id)objc;
+/// 是否是swift 对象
+/// 注意⚠️: 不管是swift struct还是class强转NSObject都success
++ (BOOL)kc_isSwiftObjc:(id)objc;
 /// 是否是自定义的class
 + (BOOL)kc_isCustomClass:(Class)cls;
 
@@ -105,14 +112,22 @@ NS_ASSUME_NONNULL_BEGIN
 /// 默认的黑名单
 + (NSArray<NSString *> *)kc_defaultBlackSelectorName;
 
-#pragma mark - 调试方法
+#pragma mark - 调试方法 dump
 
 /// 所有方法(包括层级)
-+ (NSString *)kc_debug_allMethods;
++ (NSString *)kc_dump_allMethodDescription;
 /// 所有自定义方法
-+ (NSString *)kc_debug_allCustomMethods;
++ (NSString *)kc_dump_allCustomMethodDescription;
+/// 某个class的方法描述
++ (NSString *)kc_dump_methodDescriptionForClass:(Class)cls;
+
+/// 所有属性的描述
++ (NSString *)kc_dump_allPropertyDescription;
++ (NSString *)kc_dump_propertyDescriptionForClass:(Class)cls;
+
 /// 获取所有成员变量
-- (NSString *)kc_debug_allIvars;
+- (NSString *)kc_dump_allIvarDescription;
+- (NSString *)kc_dump_ivarDescriptionForClass:(Class)cls;
 
 + (id)kc_performSelector:(NSString *)selectorName;
 - (id)kc_performSelector:(NSString *)selectorName;

@@ -509,6 +509,44 @@ bool kc_classIsCustomClass(Class aClass);
     return object_isClass(object);
 }
 
+/// 是否是swift class (不包括值类型struct、enum)
++ (BOOL)kc_isSwiftClass:(id)objc {
+    NSString *className = NSStringFromClass([objc class]);
+    if (!className) {
+        return YES;
+    }
+    BOOL isSwiftClass = [className containsString:@"."];
+    return isSwiftClass;
+}
+
+/// 是否是swift值类型
++ (BOOL)kc_isSwiftValueWithObjc:(id)objc {
+    NSString *className = NSStringFromClass([objc class]);
+    if (!className) {
+        return NO;
+    }
+    
+    if ([className isEqualToString:@"__SwiftValue"]) { // struct、enum、tuple
+        return YES;
+    }
+    
+    return NO;
+}
+
+/// 是否是swift 对象
+/// 注意⚠️: 不管是swift struct还是class强转NSObject都success
++ (BOOL)kc_isSwiftObjc:(id)objc {
+    if ([self kc_isSwiftValueWithObjc:objc]) {
+        return YES;
+    }
+    
+    if ([self kc_isSwiftClass:objc]) {
+        return YES;
+    }
+    
+    return NO;
+}
+
 /// 是否是自定义的class
 + (BOOL)kc_isCustomClass:(Class)cls {
     // var/containers/Bundle/Application/CB0D354B-DD08-4845-A084-A22FF01097FE/Example.app
@@ -550,35 +588,50 @@ bool kc_classIsCustomClass(Class aClass) {
 }
 
 #pragma mark - 调试方法
+// (lldb) image lookup -rn NSObject\(IvarDescription\)
 
 /// 所有方法(包括层级)
-+ (NSString *)kc_debug_allMethods {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    NSString *description = [self performSelector:NSSelectorFromString(@"_methodDescription")];
-    #pragma clang diagnostic pop
-    NSLog(@"%@", description);
-    return description;
++ (NSString *)kc_dump_allMethodDescription {
+    return [self kc_performSelector:@"_methodDescription"];
 }
 
 /// 所有自定义方法
-+ (NSString *)kc_debug_allCustomMethods {
++ (NSString *)kc_dump_allCustomMethodDescription {
+    return [self kc_performSelector:@"_shortMethodDescription"];
+}
+
+/// 某个class的方法描述
++ (NSString *)kc_dump_methodDescriptionForClass:(Class)cls {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    NSString *description = [self performSelector:NSSelectorFromString(@"_shortMethodDescription")];
+    NSString *description = [self performSelector:NSSelectorFromString(@"__methodDescriptionForClass:") withObject:cls];
     #pragma clang diagnostic pop
-    NSLog(@"%@", description);
+    return description;
+}
+
+/// 所有属性的描述
++ (NSString *)kc_dump_allPropertyDescription {
+    return [self kc_performSelector:@"_propertyDescription"];
+}
+
++ (NSString *)kc_dump_propertyDescriptionForClass:(Class)cls {
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+    NSString *description = [self performSelector:NSSelectorFromString(@"__propertyDescriptionForClass:") withObject:cls];
+    #pragma clang diagnostic pop
     return description;
 }
 
 /// 获取所有成员变量
-- (NSString *)kc_debug_allIvars {
+- (NSString *)kc_dump_allIvarDescription {
+    return [self kc_performSelector:@"_ivarDescription"];
+}
+
+- (NSString *)kc_dump_ivarDescriptionForClass:(Class)cls {
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    // _ivarDescription
-    NSString *description = [self performSelector:NSSelectorFromString(@"_ivarDescription")];
+    NSString *description = [self performSelector:NSSelectorFromString(@"__ivarDescriptionForClass:") withObject:cls];
     #pragma clang diagnostic pop
-    NSLog(@"%@", description);
     return description;
 }
 

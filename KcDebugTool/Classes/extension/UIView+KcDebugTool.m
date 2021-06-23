@@ -75,6 +75,7 @@
 + (void)kc_hook_addSubview {
     KcHookTool *tool = [[KcHookTool alloc] init];
     
+    // - (void)didAddSubview:(UIView *)subview;
     [tool kc_hookWithObjc:UIView.class
                  selector:@selector(addSubview:)
               withOptions:KcAspectTypeAfter
@@ -88,6 +89,8 @@
 + (void)kc_hook_removeFromSuperview {
     KcHookTool *tool = [[KcHookTool alloc] init];
     
+    
+    // - (void)willRemoveSubview:(UIView *)subview;
     [tool kc_hookWithObjc:UIView.class
                  selector:@selector(removeFromSuperview)
               withOptions:KcAspectTypeAfter

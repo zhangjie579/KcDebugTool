@@ -104,6 +104,28 @@ public extension KCSwiftMeta {
         }
         return nil
     }
+    
+    /// 还原二进制中swift函数名
+    /// 命令行工具: xcrun swift-demangle 二进制中的函数名
+    class func demangleName(_ mangledName: String) -> String {
+        return mangledName.utf8CString.withUnsafeBufferPointer {
+            (mangledNameUTF8) in
+
+            let demangledNamePtr = _stdlib_demangleImpl(
+                mangledNameUTF8.baseAddress,
+                mangledNameLength: UInt(mangledNameUTF8.count - 1),
+                outputBuffer: nil,
+                outputBufferSize: nil,
+                flags: 0)
+
+            if let demangledNamePtr = demangledNamePtr {
+                let demangledName = String(cString: demangledNamePtr)
+                free(demangledNamePtr)
+                return demangledName
+            }
+            return mangledName
+        }
+    }
 }
 
 public extension KCSwiftMeta {
@@ -156,7 +178,6 @@ public extension KCSwiftMeta {
                 }
             }
         }
-
         return stop
     }
 }
@@ -171,3 +192,6 @@ func _stdlib_demangleImpl(
     outputBufferSize: UnsafeMutablePointer<UInt>?,
     flags: UInt32
     ) -> UnsafeMutablePointer<CChar>?
+
+//@_silgen_name("swift_EnumCaseName")
+//func _getEnumCaseName<T>(_ value: T) -> UnsafePointer<CChar>?

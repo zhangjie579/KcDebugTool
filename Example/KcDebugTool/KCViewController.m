@@ -52,13 +52,14 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    [self test1];
-    
     [self.view addSubview:self.v1];
     self.v1.frame = CGRectMake(100, 100, 100, 100);
     
 //    [KcMachO log_sectionDataWithImageName:@"KcDebugTool_Example"];
 //    [KcMachOHelper log_symbolTableWithImageName:@"KcDebugTool_Example"];
+    
+    [self test1];
+    
     
     NSLog(@"");
 }

@@ -12,6 +12,8 @@
 #import "KcClassDump.h"
 #import "KcMachOHelper.h"
 
+#import "KcCocoaClassInfo.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
 @interface KcDebugTool : NSObject

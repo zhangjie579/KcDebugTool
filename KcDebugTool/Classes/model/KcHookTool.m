@@ -25,6 +25,14 @@
             withOptions:(KcAspectType)options
              usingBlock:(void(^)(KcHookAspectInfo *info))block
                   error:(NSError **)error {
+    // 如果为swift的class, 因为kc_aspect_hookSelector是NSObject的扩展, swift class没有这个方法, 调用会crash
+    // swift class 转NSObject, 成功了⚠️
+    NSObject *_Nullable cocoaObjc = (NSObject *)objc;
+    if (!cocoaObjc
+        || ![cocoaObjc respondsToSelector:@selector(kc_aspect_hookSelector:withOptions:usingBlock:error:)]) {
+        return;
+    }
+    
     [objc kc_aspect_hookSelector:selector withOptions:(KcAspectOptions)options usingBlock:^(id<KcAspectInfo> info) {
         if (block) {
             KcHookAspectInfo *model = [[KcHookAspectInfo alloc] init];
