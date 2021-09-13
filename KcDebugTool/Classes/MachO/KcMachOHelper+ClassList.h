@@ -5,7 +5,7 @@
 //  Created by 张杰 on 2021/6/27.
 //  class 列表
 
-#import <KcDebugTool/KcDebugTool.h>
+#import <KcDebugTool/KcMachOHelper.h>
 
 NS_ASSUME_NONNULL_BEGIN
 

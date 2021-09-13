@@ -74,6 +74,7 @@ TODO: Add long description of the pod here.
   
   s.subspec 'MachO' do |ss|
       ss.source_files = 'KcDebugTool/Classes/MachO/**/*'
+      ss.dependency 'KcDebugTool/extension'
   end
   
   # 全部依赖了
