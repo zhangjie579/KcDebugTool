@@ -102,12 +102,20 @@
     NSString *selectorNameDismiss = NSStringFromSelector(@selector(dismissViewControllerAnimated:completion:));
     NSString *selectorNamePop = NSStringFromSelector(@selector(popViewControllerAnimated:));
     
+    // 默认走push
+//    NSString *selectorNameShow = NSStringFromSelector(@selector(showViewController:sender:));
+    // 默认走present
+//    NSString *selectorNameShowDetail = NSStringFromSelector(@selector(showDetailViewController:sender:));
+    
     NSArray<KcHookModel<UIViewController *, NSString *> *> *array = @[
         [[KcHookModel alloc] initWithKey:[UINavigationController class] value:selectorNamePush],
         [[KcHookModel alloc] initWithKey:[UIViewController class] value:selectorNamePresent],
         
         [[KcHookModel alloc] initWithKey:[UIViewController class] value:selectorNameDismiss],
-        [[KcHookModel alloc] initWithKey:[UINavigationController class] value:selectorNamePop]
+        [[KcHookModel alloc] initWithKey:[UINavigationController class] value:selectorNamePop],
+        
+//        [[KcHookModel alloc] initWithKey:[UIViewController class] value:selectorNameShow],
+//        [[KcHookModel alloc] initWithKey:[UIViewController class] value:selectorNameShowDetail],
     ];
     
     KcHookTool *tool = [[KcHookTool alloc] init];

@@ -22,6 +22,10 @@ NS_ASSUME_NONNULL_BEGIN
                              path:(NSString *)path
                             query:(nullable NSDictionary<NSString *, id> *)query;
 
+/// window.webkit.messageHandlers方式与原生交互
+- (void)kc_callJSBridgeInMessageHandlersWithName:(NSString *)name
+                                      parameters:(nullable NSDictionary<NSString *,id> *)parameters;
+
 /// 添加JSBridge方法
 - (void)kc_addJSBridgeMethodWithSource:(NSString *)source;
 

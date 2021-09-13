@@ -7,8 +7,11 @@
 //
 
 #import <UIKit/UIKit.h>
+#import <mach-o/dyld.h>
 #import <mach-o/loader.h>
+#import <mach-o/getsect.h>
 #import <mach-o/nlist.h>
+#import <dlfcn.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -19,6 +22,7 @@ typedef struct section_64 kc_section_t;
 typedef struct nlist_64 kc_nlist_t;
 #define KC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT_64
 #define getsectdatafromheader_f getsectdatafromheader_64
+#define kc_getsectbynamefromheader_f getsectbynamefromheader_64
 #else
 typedef struct mach_header kc_mach_header_t;
 typedef struct segment_command kc_segment_command_t;
@@ -26,20 +30,33 @@ typedef struct section kc_section_t;
 typedef struct nlist kc_nlist_t;
 #define KC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT
 #define getsectdatafromheader_f getsectdatafromheader
+#define kc_getsectbynamefromheader_f getsectbynamefromheader
 #endif
-
 
 @interface KcMachOHelper : NSObject
 
 + (const char *)imageNameWithClass:(Class)cls;
 
-+ (void)enumerateClassesInImageWithBlock:(void(^)(const char *path))block;
+/// 是否是自定义的image
++ (BOOL)isCustomDefinedImage:(const char *)imageName;
 
-/// 遍历image的cls, 动态库
-+ (void)enumerateClassesInImageWithIncludeImages:(NSArray<NSString *> *)includeImages block:(void(^)(NSString *className, Class _Nullable cls))block;
+/// 主工程可执行文件name
++ (NSString *)mainBundleExecutableName;
+/// 主工程可执行文件路径
++ (NSString *)mainExecutablePath;
 
-/// 遍历image的class
-+ (void)enumerateClassForImage:(const char *)image block:(void(^)(NSString *className, Class _Nullable cls))block;
+/// header后面的第一个load command的地址
++ (uintptr_t)firstLoadCommandAfterHeader:(const kc_mach_header_t* const)header;
+
+/// 求索引idx的镜像image的segment基地址 (未加slide)
+/// 对应MachOView: load commands -> LC_segment_64(_LINKEDIT)
++ (uintptr_t)segmentBaseOfImageIndex:(const uint32_t)imageIndex;
+
+/// 查找名称为imageName的已加载二进制镜像
++ (uint32_t)indexOfImageNamed:(const char* const)imageName exactMatch:(BOOL)exactMatch;
+
+/// 获取imageUUID
++ (NSString *)imageUUID:(const char * const)imageName exactMatch:(BOOL)exactMatch;
 
 /// 获取uuid: const mach_header *header = (const mach_header *)_dyld_get_image_header(i);
 + (NSString *)uuidWithBinaryImageHeader:(const void *)header;
@@ -62,35 +79,24 @@ typedef struct nlist kc_nlist_t;
  */
 + (NSDictionary<NSString *, id> *)dyldImageInfo;
 
+/// machO的基础信息
++ (void)machOBaseInfoWithBlock:(void(^)(UInt32 imageIndex,
+                                    const char *imagePath,
+                                    intptr_t slide,
+                                    kc_mach_header_t *header,
+                                    kc_segment_command_t *linkedit_segment,
+                                    struct symtab_command* symtab_cmd))block;
+
+/// 打印字符串表
+/// string table 字符串之间用\0分割 (因为类型为char *, c的字符串就是用\0分割的)
++ (void)log_stringTableWithImageName:(NSString *)imageName;
+
 /// 获取符号表的数据
+/// /// [KcMachOHelper log_symbolTableWithImageName:@"KcDebugTool_Example"];
 + (void)log_symbolTableWithImageName:(NSString *)imageName;
 
-/// 查找swift符号
-/// 原理: 遍历symbol table, 根据swift class name特定的特征
-+ (void)findSwiftSymbolsWithBundlePath:(const char *)bundlePath
-                                suffix:(const char *)suffix
-                              callback:(void (^)(const void *symval, const char *symname, void *typeref, void *typeend))callback;
-
-@end
-
-@interface NSObject (KcMachO)
-
-/// 所有自定义class
-+ (NSMutableArray<Class> *)kc_allCustomClasses;
-/// 获取machO中__objc_classlist段内的class - 自定义class
-+ (NSMutableArray<Class> *)kc_allCustomClassesFromObjcClasslistWithFilterImagePath:(BOOL(^ _Nullable)(NSString *imagePath))filterImagePath filterClassName:(BOOL(^ _Nullable)(NSString *imagePath))filterClassName;
-
-/// 所有自定义class - objc_copyClassNamesForImage
-/// @param filterImagePath 过滤image Path
-/// @param filterClassName 过滤 className
-+ (NSMutableArray<Class> *)kc_allCustomClassesForImageWithFilterImagePath:(BOOL(^ _Nullable)(NSString *imagePath))filterImagePath
-                                                          filterClassName:(BOOL(^ _Nullable)(NSString *imagePath))filterClassName;
-
-/// 获取MachO段中的内容
-+ (nullable void *)kc_sectiondata:(const char *)segname
-                         sectname:(const char *)sectname
-                             size:(size_t *)size
-                  filterImagePath:(BOOL(^ _Nullable)(NSString *imagePath))filterImagePath;
+/// 获取所有全局对象 - 全局对象存储在 Mach-O 文件的 __DATA segment __bss section
++ (NSArray<NSObject *> *)globalObjects;
 
 @end
 

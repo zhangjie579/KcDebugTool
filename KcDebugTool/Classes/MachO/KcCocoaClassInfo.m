@@ -145,6 +145,8 @@
 
 @end
 
+// MARK: - KcCocoaClassImpInfo 方法的信息
+
 @implementation KcCocoaClassImpInfo
 
 /// 根据IMP得到方法的信息, 通过dladdr获取方法的信息
@@ -217,6 +219,57 @@
         return @"";
     }
     return [NSString stringWithUTF8String:nullableCString];
+}
+
+@end
+
+// MARK: - KcCocoaClassImpInfo 属性信息
+
+@implementation KcCocoaPropertyInfo
+
+- (nonnull instancetype)initWithProperty:(objc_property_t)property {
+    if (self = [super init]) {
+        const char *name = property_getName(property);
+        const char *attributtes_short = property_getAttributes(property);
+
+        if (name == NULL || attributtes_short == NULL || name[0] == '\0' || attributtes_short[0] == '\0')
+            return nil;
+
+        self.name = @(property_getName(property));
+        self.attributtes_short = @(property_getAttributes(property));
+        
+        do {
+            size_t field_len = strcspn(attributtes_short, ",");
+            if (field_len == 1) {
+                if (attributtes_short[0] == 'R')
+                    self.isReadonly = true;
+                else if (attributtes_short[0] == 'C')
+                    self.isCopy = true;
+                else if (attributtes_short[0] == '&')
+                    self.isStrong = true;
+                else if (attributtes_short[0] == 'W')
+                    self.isWeak = true;
+                else if (attributtes_short[0] == 'N')
+                    self.isNonatomic = true;
+                else if (attributtes_short[0] == 'D')
+                    self.isDynamic = true;
+            } else if (field_len > 1) {
+                if (attributtes_short[0] == 'V' && field_len < 512) {
+                    char ivar_name[512];
+                    strncpy(ivar_name, attributtes_short + 1, field_len - 1);
+                    ivar_name[field_len] = '\0';
+                    self.ivar_name = ivar_name;
+                } else if (attributtes_short[0] == 'T' && field_len < 128) {
+                    char type_name[128];
+                    strncpy(type_name, attributtes_short + 1, field_len - 1);
+                    type_name[field_len] = '\0';
+                    self.type_name = type_name;
+                }
+            }
+            attributtes_short += field_len;
+        } while (*attributtes_short++);
+    }
+    return self;
 }
 
 @end

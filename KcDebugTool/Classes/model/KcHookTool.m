@@ -280,6 +280,7 @@ void kc_addHandleBeforeExecute(id object, SEL selector, ...) {
     if (!self.instance) {
         return nil;
     }
+    // 这里swift class name的可读性问题没有处理⚠️
     if (class_isMetaClass(object_getClass(self.instance))) {
         return NSStringFromClass(self.instance);
     } else {

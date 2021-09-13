@@ -109,6 +109,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// 是类或者子类
 - (BOOL)kc_isClassOrSubClass:(NSSet<NSString *> *)classNames;
 
+/// 指针是否是一个objc对象
++ (BOOL)kc_isObjcObject:(const void *)inPtr;
+/// 指针是否是一个objc对象
++ (BOOL)kc_isObjcObject:(const void *)inPtr
+             allClasses:(_Nonnull const Class *_Nonnull)allClasses
+             classCount:(int)classCount;
+
 /// 默认的黑名单
 + (NSArray<NSString *> *)kc_defaultBlackSelectorName;
 

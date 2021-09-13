@@ -37,6 +37,28 @@
     [self evaluateJavaScript:javaScript.copy completionHandler:nil];
 }
 
+/// window.webkit.messageHandlers方式与原生交互
+- (void)kc_callJSBridgeInMessageHandlersWithName:(NSString *)name
+                                      parameters:(nullable NSDictionary<NSString *,id> *)parameters {
+    NSString *JSONString = @"null";
+    
+    if (parameters) {
+        NSError *error;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:parameters options:NSJSONWritingFragmentsAllowed error:&error];
+        if (data && !error) {
+            JSONString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        }
+    }
+    
+    NSString *javaScript = [NSString stringWithFormat:@"window.webkit.messageHandlers.%@.postMessage(%@)", name, JSONString];
+    
+    [self evaluateJavaScript:javaScript completionHandler:^(id _Nullable objc, NSError * _Nullable error) {
+        if (error) {
+            [KcLogParamModel logWithKey:@"JS与原生交互" format:@"error: %@", error.description];
+        }
+    }];
+}
+
 /// 添加JSBridge方法
 - (void)kc_addJSBridgeMethodWithSource:(NSString *)source {
     WKUserScript *script = [[WKUserScript alloc] initWithSource:source

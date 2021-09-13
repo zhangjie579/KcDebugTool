@@ -6,8 +6,32 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <objc/message.h>
 
 NS_ASSUME_NONNULL_BEGIN
+
+// MARK: - KcCocoaClassImpInfo 属性信息
+
+@interface KcCocoaPropertyInfo : NSObject
+
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *attributtes_short;
+
+@property (nonatomic) BOOL isStrong;
+@property (nonatomic) BOOL isCopy;
+@property (nonatomic) BOOL isWeak;
+@property (nonatomic) BOOL isNonatomic;
+@property (nonatomic) BOOL isReadonly;
+@property (nonatomic) BOOL isDynamic;
+
+@property (nonatomic) const char *ivar_name;
+@property (nonatomic) const char *type_name;
+
+- (nonnull instancetype)initWithProperty:(objc_property_t)property;
+
+@end
+
+// MARK: - KcCocoaClassImpInfo 方法的信息
 
 /// 方法的信息
 @interface KcCocoaClassImpInfo : NSObject
@@ -38,6 +62,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable KcCocoaClassImpInfo *)impInfoForImp:(IMP)imp;
 
 @end
+
+// MARK: - KcCocoaClassInfo 类信息
 
 @interface KcCocoaClassInfo : NSObject
 

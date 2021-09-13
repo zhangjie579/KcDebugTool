@@ -93,7 +93,7 @@
 + (void)kc_hook_sendActionForEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIControl class]
                              selector:@selector(sendAction:to:forEvent:)
-                          withOptions:KcAspectTypeBefore
+                          withOptions:KcAspectTypeAfter
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [self kc_handleLogSendActionWithInfo:info];
         if (block) {
@@ -106,7 +106,7 @@
 + (void)kc_hook_UIApplicationSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIApplication class]
                              selector:@selector(sendAction:to:from:forEvent:)
-                          withOptions:KcAspectTypeBefore
+                          withOptions:KcAspectTypeAfter
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [self kc_handleLogSendActionWithInfo:info];
         if (block) {
@@ -120,7 +120,7 @@
 + (void)kc_hook_UIApplicationSendEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIApplication class]
                              selector:@selector(sendEvent:)
-                          withOptions:KcAspectTypeBefore
+                          withOptions:KcAspectTypeAfter
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [self kc_handleLogSendActionWithInfo:info];
         if (block) {
@@ -163,7 +163,7 @@ _UIGestureRecognizerSendTargetActions
 + (void)kc_hook_gestureRecognizerSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:NSClassFromString(@"UIGestureRecognizerTarget")
                              selector:NSSelectorFromString(@"_sendActionWithGestureRecognizer:")
-                          withOptions:KcAspectTypeBefore
+                          withOptions:KcAspectTypeAfter
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 //        id instance = info.instance; // (action=switchToDefaultKeyBoard, target=<KcTestView 0x7ffc6540f710>)
         id target = info.arguments.firstObject; // <UITapGestureRecognizer: 0x7ffc6540fa00; state = Ended; view = <UILabel 0x7ffc65406ed0>; target= <(action=switchToDefaultKeyBoard, target=<KcTestView 0x7ffc6540f710>)>>
@@ -256,9 +256,10 @@ _UIGestureRecognizerSendTargetActions
         return;
     }
 
+    // 比如: 如果是通过Rx的方式添加的gesture处理, 对应的target、action是rx通用的, 不是想要的, 只能通过堆栈来查看⚠️
     [self.kc_hookTool kc_hookWithObjc:target
                          selectorName:action
-                          withOptions:KcAspectTypeBefore
+                          withOptions:KcAspectTypeAfter
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [KcLogParamModel logWithKey:logIdentity
                              format:@"target: %@, action: %@", info.className, info.selectorName];

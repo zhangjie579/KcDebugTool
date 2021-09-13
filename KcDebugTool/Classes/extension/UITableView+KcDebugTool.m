@@ -20,7 +20,8 @@
         if (![info.instance isKindOfClass:UITableView.class]) {
             return;
         }
-        [KcLogParamModel logWithKey:@"点击cell" format:@"UITableViewDelegate: %@", [info.instance delegate]];
+        [KcLogParamModel logWithKey:@"点击cell"
+                             format:@"UITableViewDelegate: %@, indexPath: %@", [info.instance delegate], [info.arguments.firstObject description] ?: @""];
         
     } error:nil];
 }

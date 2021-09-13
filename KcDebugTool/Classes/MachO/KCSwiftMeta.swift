@@ -129,7 +129,7 @@ public extension KCSwiftMeta {
 }
 
 public extension KCSwiftMeta {
-    /**
+    /** 遍历虚函数表vTable, 通过改变虚函数的point来hook函数
      Iterate over all methods in the vtable that follows the class information 遍历vtable中所有方法
      of a Swift class (TargetClassMetadata)
      - parameter aClass: the class, the methods of which to trace
@@ -179,6 +179,26 @@ public extension KCSwiftMeta {
             }
         }
         return stop
+    }
+}
+
+public extension KCSwiftMeta {
+    /// 是否是属性
+    class func isProperty(aClass: AnyClass, sel: Selector) -> Bool {
+        var name = [Int8](repeating: 0, count: 5000)
+        strcpy(&name, sel_getName(sel))
+        if strncmp(name, "is", 2) == 0 && isupper(Int32(name[2])) != 0 {
+            name[2] = Int8(towlower(Int32(name[2]))) // 小写
+            return class_getProperty(aClass, &name[2]) != nil
+        }
+        else if strncmp(name, "set", 3) != 0 || islower(Int32(name[3])) != 0 { // set属性
+            return class_getProperty(aClass, name) != nil
+        }
+        else {
+            name[3] = Int8(tolower(Int32(name[3])))
+            name[Int(strlen(name))-1] = 0
+            return class_getProperty(aClass, &name[3]) != nil
+        }
     }
 }
 

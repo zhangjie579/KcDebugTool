@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'KcDebugTool'
-  s.version          = '0.0.4'
+  s.version          = '0.0.5'
   s.summary          = 'A short description of KcDebugTool.'
 
 # This description is used to generate tags and improve search results.
@@ -47,14 +47,15 @@ TODO: Add long description of the pod here.
 #      m.dependency 'KcDebugTool/SDK'
   end
   
-  s.subspec 'other' do |other|
-      other.source_files = 'KcDebugTool/Classes/other/**/*'
-      other.frameworks = 'UIKit'
-  end
-  
   s.subspec 'sdk' do |sdk|
       sdk.source_files = 'KcDebugTool/Classes/sdk/**/*'
       sdk.frameworks = 'UIKit'
+  end
+  
+  s.subspec 'other' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/other/**/*'
+      ss.frameworks = 'UIKit'
+      ss.dependency 'KcDebugTool/sdk'
   end
   
   s.subspec 'model' do |m|

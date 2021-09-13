@@ -189,3 +189,13 @@ struct kc_xtrace_arg {
 }
 
 @end
+
+#pragma mark - demangle c++
+
+//#import <cxxabi.h>
+//
+//extern "C" char* ksdm_demangleCPP(const char* mangledSymbol) {
+//    int status = 0;
+//    char* demangled = __cxxabiv1::__cxa_demangle(mangledSymbol, NULL, NULL, &status);
+//    return status == 0 ? demangled : NULL;
+//}

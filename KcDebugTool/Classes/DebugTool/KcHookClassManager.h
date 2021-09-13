@@ -16,6 +16,7 @@
 #import "WKWebView+KcDebugTool.h"
 #import "UICollectionView+KcDebugTool.h"
 #import "UITableView+KcDebugTool.h"
+#import "SRBlockStrongReferenceCollector.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

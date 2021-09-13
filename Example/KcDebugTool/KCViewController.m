@@ -49,17 +49,32 @@
 //    return 0;
 //}
 
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     
     [self.view addSubview:self.v1];
     self.v1.frame = CGRectMake(100, 100, 100, 100);
     
+    NSArray<NSObject *> *objc = [KcMachOHelper globalObjects];
+    
+//    uintptr_t a = [KcMachOHelper defaultBaseAddressWithImageName:[NSBundle mainBundle].executablePath.UTF8String];
+    
 //    [KcMachO log_sectionDataWithImageName:@"KcDebugTool_Example"];
 //    [KcMachOHelper log_symbolTableWithImageName:@"KcDebugTool_Example"];
     
-    [self test1];
+//    NSString *path = [NSBundle bundleForClass:KcDebugTool.class].executablePath;
+//    [KcMachOHelper findSwiftClassesWithBundlePath:path.UTF8String callback:^(Class  _Nonnull __unsafe_unretained cls) {
+//        NSLog(@"%@", cls);
+//    }];
     
+//    [KcMachOHelper enumerateClassesInImageWithBlock:^(const char * _Nonnull path) {
+//        if ([@(path) containsString:@"KcDebugTool_Example"]) {
+//            NSLog(@"%s", path);
+//        }
+//    }];
+    
+    [self test1];
     
     NSLog(@"");
 }
@@ -74,6 +89,10 @@
 
 - (void)tapClick {
     NSLog(@"%s", _cmd);
+}
+
++ (void)kc_test {
+    NSLog(@"动态调用w ");
 }
 
 - (UIView *)v1 {

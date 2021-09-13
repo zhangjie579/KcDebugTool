@@ -20,7 +20,8 @@
         if (![info.instance isKindOfClass:UICollectionView.class]) {
             return;
         }
-        [KcLogParamModel logWithKey:@"点击cell" format:@"UICollectionViewDelegate: %@", [info.instance delegate]];
+        [KcLogParamModel logWithKey:@"点击cell"
+                             format:@"UICollectionViewDelegate: %@, indexPath: %@", [info.instance delegate], [info.arguments.firstObject description] ?: @""];
         
     } error:nil];
 }

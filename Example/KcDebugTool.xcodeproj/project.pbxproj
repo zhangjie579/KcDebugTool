@@ -25,6 +25,7 @@
 		873B8AEB1B1F5CCA007FD442 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 873B8AEA1B1F5CCA007FD442 /* Main.storyboard */; };
 		A027927A91E39814BAA634C7 /* Pods_KcDebugTool_Tests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 08F4A519A61266A45B3782F8 /* Pods_KcDebugTool_Tests.framework */; };
 		C12EAFFE264A7BB10047427C /* KcMachO.m in Sources */ = {isa = PBXBuildFile; fileRef = C12EAFFD264A7BB10047427C /* KcMachO.m */; };
+		C1FF398126873E7E0096514C /* KcCategoryManager.m in Sources */ = {isa = PBXBuildFile; fileRef = C1FF398026873E7E0096514C /* KcCategoryManager.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,8 @@
 		C12EAFFC264A7BB10047427C /* KcMachO.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KcMachO.h; sourceTree = "<group>"; };
 		C12EAFFD264A7BB10047427C /* KcMachO.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KcMachO.m; sourceTree = "<group>"; };
 		C1BB6396264FC2FC00D5CF5D /* KcDebugTool_Example-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "KcDebugTool_Example-Bridging-Header.h"; sourceTree = "<group>"; };
+		C1FF397F26873E7E0096514C /* KcCategoryManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KcCategoryManager.h; sourceTree = "<group>"; };
+		C1FF398026873E7E0096514C /* KcCategoryManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KcCategoryManager.m; sourceTree = "<group>"; };
 		C293AE04AA4330BD7068107B /* KcDebugTool.podspec */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = KcDebugTool.podspec; path = ../KcDebugTool.podspec; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
 		E9EE2B60C004C949C5AE1737 /* README.md */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = ../README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -158,6 +161,8 @@
 				C12EAFFC264A7BB10047427C /* KcMachO.h */,
 				C12EAFFD264A7BB10047427C /* KcMachO.m */,
 				C1BB6396264FC2FC00D5CF5D /* KcDebugTool_Example-Bridging-Header.h */,
+				C1FF397F26873E7E0096514C /* KcCategoryManager.h */,
+				C1FF398026873E7E0096514C /* KcCategoryManager.m */,
 			);
 			name = "Example for KcDebugTool";
 			path = KcDebugTool;
@@ -255,6 +260,7 @@
 				ORGANIZATIONNAME = "张杰";
 				TargetAttributes = {
 					6003F589195388D20070C39A = {
+						DevelopmentTeam = WXH4S8VA6B;
 						LastSwiftMigration = 1240;
 					};
 					6003F5AD195388D20070C39A = {
@@ -376,6 +382,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1FF398126873E7E0096514C /* KcCategoryManager.m in Sources */,
 				6003F59E195388D20070C39A /* KCAppDelegate.m in Sources */,
 				6003F5A7195388D20070C39A /* KCViewController.m in Sources */,
 				C12EAFFE264A7BB10047427C /* KcMachO.m in Sources */,
@@ -508,6 +515,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				DEVELOPMENT_TEAM = WXH4S8VA6B;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "KcDebugTool/KcDebugTool-Prefix.pch";
 				INFOPLIST_FILE = "KcDebugTool/KcDebugTool-Info.plist";
@@ -528,6 +536,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				DEVELOPMENT_TEAM = WXH4S8VA6B;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "KcDebugTool/KcDebugTool-Prefix.pch";
 				INFOPLIST_FILE = "KcDebugTool/KcDebugTool-Info.plist";
