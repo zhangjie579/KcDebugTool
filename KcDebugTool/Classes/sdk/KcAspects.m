@@ -668,6 +668,7 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
             * 执行逻辑的时候, 比如 [self kc_pushViewController:animated:], 传入的originalSelector = kc_pushViewController:animated:, 找不到原来实现, so crash
             * 这边兼容下, 如果找不到, 而又是需要特殊处理的方法, 就直接用对应的方法
          2.处理 kc_pushViewController:animated: -> pushViewController:animated:
+            * swift与oc混编的情况下, 有些方法需要特殊处理, 比如: dismissViewControllerAnimated, 它在swift中符号是: dismissWithAnimated
          */
         if (!objectContainer && !classContainer) {
             NSMutableArray<NSString *> *specialHandleMethods = [[NSMutableArray alloc] init];
@@ -705,17 +706,37 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
             }
         }
         
-        // 处理 kc_pushViewController:animated: -> pushViewController:animated:
+        // 2.处理 kc_pushViewController:animated: -> pushViewController:animated:
         if (!objectContainer && !classContainer) {
             SEL originalSelector2 = originalSelector;
             NSString *originalSelectorName = NSStringFromSelector(originalSelector2);
             if ([originalSelectorName containsString:@"_"]) {
-                NSRange range = [originalSelectorName rangeOfString:@"_"];
+                NSRange range = [originalSelectorName rangeOfString:@"_" options:NSBackwardsSearch];
                 NSString *newSelectorName = [originalSelectorName substringFromIndex:range.location + range.length];
+                
+                
                 originalSelector2 = NSSelectorFromString(newSelectorName);
                 SEL aliasSelector2 = aspect_aliasForSelector(originalSelector2);
                 KcAspectsContainer *objectContainer2 = objc_getAssociatedObject(self, aliasSelector2);
                 KcAspectsContainer *classContainer2 = aspect_getContainerForClass(object_getClass(self), aliasSelector2);
+                
+                {
+                    // 2.1.方法映射(有些swift方法对应oc的方法名不一致)⚠️
+                    NSDictionary<NSString *, NSString *> *selectorNameMap = @{
+                        @"dismissWithAnimated:completion:": NSStringFromSelector(@selector(dismissViewControllerAnimated:completion:)),
+                    };
+                    
+                    if (!objectContainer2 && !classContainer2) {
+                        NSString * _Nullable mapSelectorName = selectorNameMap[newSelectorName];
+                        if (mapSelectorName) {
+                            newSelectorName = mapSelectorName;
+                            originalSelector2 = NSSelectorFromString(newSelectorName);
+                            aliasSelector2 = aspect_aliasForSelector(originalSelector2);
+                            objectContainer2 = objc_getAssociatedObject(self, aliasSelector2);
+                            classContainer2 = aspect_getContainerForClass(object_getClass(self), aliasSelector2);
+                        }
+                    }
+                }
                 
                 // 替换
                 if (objectContainer2 || classContainer2) {
@@ -726,7 +747,6 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
                 }
             }
         }
-        
     }
     
     // 5.包装执行invoke的对象
@@ -844,6 +864,7 @@ static NSArray<NSString *> *kc_methodNamesNavigation() {
         NSStringFromSelector(@selector(pushViewController:animated:)),
         NSStringFromSelector(@selector(presentViewController:animated:completion:)),
         NSStringFromSelector(@selector(dismissViewControllerAnimated:completion:)),
+        @"dismissWithAnimated:completion:",
         NSStringFromSelector(@selector(popViewControllerAnimated:)),
     ];
     return methods;
