@@ -107,6 +107,7 @@ public extension KCSwiftMeta {
     
     /// 还原二进制中swift函数名
     /// 命令行工具: xcrun swift-demangle 二进制中的函数名
+    /// expr -l objc++ -O -- [KCSwiftMeta demangleName:@"_TtCO7SawaKSA9HomeChild17KSAViewController"]
     class func demangleName(_ mangledName: String) -> String {
         return mangledName.utf8CString.withUnsafeBufferPointer {
             (mangledNameUTF8) in

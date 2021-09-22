@@ -1,27 +1,28 @@
 PODS:
   - fishhook (0.2)
-  - KcDebugTool (0.0.4):
-    - KcDebugTool/DebugTool (= 0.0.4)
-    - KcDebugTool/extension (= 0.0.4)
-    - KcDebugTool/MachO (= 0.0.4)
-    - KcDebugTool/model (= 0.0.4)
-    - KcDebugTool/other (= 0.0.4)
-    - KcDebugTool/sdk (= 0.0.4)
-    - KcDebugTool/View (= 0.0.4)
-  - KcDebugTool/DebugTool (0.0.4):
+  - KcDebugTool (0.0.5):
+    - KcDebugTool/DebugTool (= 0.0.5)
+    - KcDebugTool/extension (= 0.0.5)
+    - KcDebugTool/MachO (= 0.0.5)
+    - KcDebugTool/model (= 0.0.5)
+    - KcDebugTool/other (= 0.0.5)
+    - KcDebugTool/sdk (= 0.0.5)
+    - KcDebugTool/View (= 0.0.5)
+  - KcDebugTool/DebugTool (0.0.5):
     - KcDebugTool/extension
     - KcDebugTool/MachO
     - KcDebugTool/other
     - KcDebugTool/View
-  - KcDebugTool/extension (0.0.4):
+  - KcDebugTool/extension (0.0.5):
     - KcDebugTool/model
-  - KcDebugTool/MachO (0.0.4)
-  - KcDebugTool/model (0.0.4):
+  - KcDebugTool/MachO (0.0.5):
+    - KcDebugTool/extension
+  - KcDebugTool/model (0.0.5):
     - KcDebugTool/sdk
-  - KcDebugTool/other (0.0.4):
+  - KcDebugTool/other (0.0.5):
     - KcDebugTool/sdk
-  - KcDebugTool/sdk (0.0.4)
-  - KcDebugTool/View (0.0.4)
+  - KcDebugTool/sdk (0.0.5)
+  - KcDebugTool/View (0.0.5)
 
 DEPENDENCIES:
   - fishhook
@@ -37,7 +38,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   fishhook: ea19933abfe8f2f52c55fd8b6e2718467d3ebc89
-  KcDebugTool: 8ea1bfbbf1ed29d210468aeb35d313aef1834d43
+  KcDebugTool: 092a161ee3663fe453c9f4f0a7b4231b6d34dc5e
 
 PODFILE CHECKSUM: 942e8533fbb03875339a144cf41ca2b31ec45bdd
 
