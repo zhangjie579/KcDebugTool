@@ -129,7 +129,10 @@
                 [obj.value isEqualToString:selectorNamePresent]) {
                 
                 // push、present, 监听from对象的销毁 (这样会导致后面push的页面销毁, 并且不走pop逻辑)
-                [tool kc_hookWithObjc:info.instance selectorName:@"dealloc" withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull subInfo) {
+                [tool kc_hookWithObjc:info.instance
+                         selectorName:@"dealloc"
+                          withOptions:KcAspectTypeBefore
+                           usingBlock:^(KcHookAspectInfo * _Nonnull subInfo) {
                     [KcLogParamModel logWithKey:@"跳转 - from对象dealloc - ⚠️" format:@"%@", subInfo.instance];
                 }];
                 
@@ -146,6 +149,35 @@
             [KcLogParamModel logWithKey:@"跳转" format:@"%@ from: %@, to: %@, self: %@", obj.value, fromViewController, toViewController ?: @"", info.instance];
         }];
     }];
+}
+
+/// hook viewController (showViewController、showDetailViewController)方法
++ (void)kc_hook_viewControllerShowWithBlock:(void(^ _Nullable)(Class toViewControllerType, UIViewController *fromViewController, UIViewController *toViewController))block {
+    void (^handleClosure)(KcHookAspectInfo * _Nonnull) = ^(KcHookAspectInfo * _Nonnull info) {
+        UIViewController *from = info.instance;
+        UIViewController *to = info.arguments.firstObject;
+        
+        if (block) {
+            block([to class], from, to);
+        }
+        
+        NSString *selectorName = [info.selectorName substringToIndex:[info.selectorName rangeOfString:@":"].location];
+        
+        [KcLogParamModel logWithKey:@"跳转"
+                             format:@"%@ from: %@, to: %@", selectorName, from, to];
+    };
+    
+    [self.kc_hookTool kc_hookWithObjc:self
+                            selector:@selector(showViewController:sender:)
+                        withOptions:KcAspectTypeBefore
+                           usingBlock:handleClosure
+                                error:nil];
+    
+    [self.kc_hookTool kc_hookWithObjc:self
+                            selector:@selector(showDetailViewController:sender:)
+                        withOptions:KcAspectTypeBefore
+                           usingBlock:handleClosure
+                                error:nil];
 }
 
 /// viewController的生命周期方法
