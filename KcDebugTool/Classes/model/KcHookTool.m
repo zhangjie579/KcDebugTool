@@ -11,7 +11,7 @@
 #import "KcAspects.h"
 #import "KcHookModel.h"
 // 引用 - KCSwiftMeta 处理swift的dump className
-#import <KcDebugTool/KcDebugTool-Swift.h>
+//#import "KcDebugTool/KcDebugTool-Swift.h"
 //#import "THInterceptor.h"
 
 #pragma mark - 基于Aspcet
@@ -291,7 +291,8 @@ void kc_addHandleBeforeExecute(id object, SEL selector, ...) {
     }
 
     if ([KcHookAspectInfo isSwiftClassName:className]) {
-        className = [KCSwiftMeta demangleName:className];
+        className = [NSClassFromString(@"KCSwiftMeta") performSelector:@selector(demangleName:) withObject:className];
+//        className = [KCSwiftMeta demangleName:className];
     }
     return className ?: @"";
 }
