@@ -12,17 +12,31 @@
 
 /// 点击cell
 + (void)kc_hook_cellDidSelect {
+//    KcHookTool *tool = [[KcHookTool alloc] init];
+//    [tool kc_hookWithObjc:UITableView.class
+//                 selector:NSSelectorFromString(@"_selectRowAtIndexPath:animated:scrollPosition:notifyDelegate:isCellMultiSelect:")
+//              withOptions:KcAspectTypeBefore
+//               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        if (![info.instance isKindOfClass:UITableView.class]) {
+//            return;
+//        }
+//        [KcLogParamModel logWithKey:@"点击cell"
+//                             format:@"UITableViewDelegate: %@, indexPath: %@", [info.instance delegate], [info.arguments.firstObject description] ?: @""];
+//        
+//    } error:nil];
+    
     KcHookTool *tool = [[KcHookTool alloc] init];
     [tool kc_hookWithObjc:UITableView.class
-                 selector:NSSelectorFromString(@"_selectRowAtIndexPath:animated:scrollPosition:notifyDelegate:isCellMultiSelect:")
+                 selector:@selector(setDelegate:)
               withOptions:KcAspectTypeBefore
                usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        if (![info.instance isKindOfClass:UITableView.class]) {
-            return;
-        }
-        [KcLogParamModel logWithKey:@"点击cell"
-                             format:@"UITableViewDelegate: %@, indexPath: %@", [info.instance delegate], [info.arguments.firstObject description] ?: @""];
-        
+        [tool kc_hookWithObjc:info.arguments.firstObject
+                     selector:@selector(tableView:didSelectRowAtIndexPath:)
+                  withOptions:KcAspectTypeBefore
+                   usingBlock:^(KcHookAspectInfo * _Nonnull subInfo) {
+            [KcLogParamModel logWithKey:@"点击cell"
+                                 format:@"UITableViewDelegate: %@, indexPath: %@", subInfo.className, [subInfo.arguments[1] description] ?: @""];
+        } error:nil];
     } error:nil];
 }
 
