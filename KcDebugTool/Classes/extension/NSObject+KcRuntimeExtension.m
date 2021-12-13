@@ -769,50 +769,50 @@ static bool isValidReadableMemory(const void *inPtr) {
 #pragma mark - 调试方法
 // (lldb) image lookup -rn NSObject\(IvarDescription\)
 
-/// 所有方法(包括层级)
-+ (NSString *)kc_dump_allMethodDescription {
-    return [self kc_performSelector:@"_methodDescription"];
-}
-
-/// 所有自定义方法
-+ (NSString *)kc_dump_allCustomMethodDescription {
-    return [self kc_performSelector:@"_shortMethodDescription"];
-}
-
-/// 某个class的方法描述
-+ (NSString *)kc_dump_methodDescriptionForClass:(Class)cls {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    NSString *description = [self performSelector:NSSelectorFromString(@"__methodDescriptionForClass:") withObject:cls];
-    #pragma clang diagnostic pop
-    return description;
-}
-
-/// 所有属性的描述
-+ (NSString *)kc_dump_allPropertyDescription {
-    return [self kc_performSelector:@"_propertyDescription"];
-}
-
-+ (NSString *)kc_dump_propertyDescriptionForClass:(Class)cls {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    NSString *description = [self performSelector:NSSelectorFromString(@"__propertyDescriptionForClass:") withObject:cls];
-    #pragma clang diagnostic pop
-    return description;
-}
-
-/// 获取所有成员变量
-- (NSString *)kc_dump_allIvarDescription {
-    return [self kc_performSelector:@"_ivarDescription"];
-}
-
-- (NSString *)kc_dump_ivarDescriptionForClass:(Class)cls {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    NSString *description = [self performSelector:NSSelectorFromString(@"__ivarDescriptionForClass:") withObject:cls];
-    #pragma clang diagnostic pop
-    return description;
-}
+///// 所有方法(包括层级)
+//+ (NSString *)kc_dump_allMethodDescription {
+//    return [self kc_performSelector:@"_methodDescription"];
+//}
+//
+///// 所有自定义方法
+//+ (NSString *)kc_dump_allCustomMethodDescription {
+//    return [self kc_performSelector:@"_shortMethodDescription"];
+//}
+//
+///// 某个class的方法描述
+//+ (NSString *)kc_dump_methodDescriptionForClass:(Class)cls {
+//    #pragma clang diagnostic push
+//    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+//    NSString *description = [self performSelector:NSSelectorFromString(@"__methodDescriptionForClass:") withObject:cls];
+//    #pragma clang diagnostic pop
+//    return description;
+//}
+//
+///// 所有属性的描述
+//+ (NSString *)kc_dump_allPropertyDescription {
+//    return [self kc_performSelector:@"_propertyDescription"];
+//}
+//
+//+ (NSString *)kc_dump_propertyDescriptionForClass:(Class)cls {
+//    #pragma clang diagnostic push
+//    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+//    NSString *description = [self performSelector:NSSelectorFromString(@"__propertyDescriptionForClass:") withObject:cls];
+//    #pragma clang diagnostic pop
+//    return description;
+//}
+//
+///// 获取所有成员变量
+//- (NSString *)kc_dump_allIvarDescription {
+//    return [self kc_performSelector:@"_ivarDescription"];
+//}
+//
+//- (NSString *)kc_dump_ivarDescriptionForClass:(Class)cls {
+//    #pragma clang diagnostic push
+//    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+//    NSString *description = [self performSelector:NSSelectorFromString(@"__ivarDescriptionForClass:") withObject:cls];
+//    #pragma clang diagnostic pop
+//    return description;
+//}
 
 + (id)kc_performSelector:(NSString *)selectorName {
     #pragma clang diagnostic push

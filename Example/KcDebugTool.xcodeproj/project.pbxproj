@@ -24,6 +24,7 @@
 		71719F9F1E33DC2100824A3D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 71719F9D1E33DC2100824A3D /* LaunchScreen.storyboard */; };
 		873B8AEB1B1F5CCA007FD442 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 873B8AEA1B1F5CCA007FD442 /* Main.storyboard */; };
 		A027927A91E39814BAA634C7 /* Pods_KcDebugTool_Tests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 08F4A519A61266A45B3782F8 /* Pods_KcDebugTool_Tests.framework */; };
+		C101196D2766E2CA0084ADAA /* KCOneViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C101196C2766E2CA0084ADAA /* KCOneViewController.swift */; };
 		C12EAFFE264A7BB10047427C /* KcMachO.m in Sources */ = {isa = PBXBuildFile; fileRef = C12EAFFD264A7BB10047427C /* KcMachO.m */; };
 		C1FF398126873E7E0096514C /* KcCategoryManager.m in Sources */ = {isa = PBXBuildFile; fileRef = C1FF398026873E7E0096514C /* KcCategoryManager.m */; };
 /* End PBXBuildFile section */
@@ -67,6 +68,7 @@
 		71719F9E1E33DC2100824A3D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		873B8AEA1B1F5CCA007FD442 /* Main.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = Main.storyboard; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		8CE114380200FC3B9E649DDE /* Pods-KcDebugTool_Example.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KcDebugTool_Example.debug.xcconfig"; path = "Target Support Files/Pods-KcDebugTool_Example/Pods-KcDebugTool_Example.debug.xcconfig"; sourceTree = "<group>"; };
+		C101196C2766E2CA0084ADAA /* KCOneViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KCOneViewController.swift; sourceTree = "<group>"; };
 		C12EAFFC264A7BB10047427C /* KcMachO.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KcMachO.h; sourceTree = "<group>"; };
 		C12EAFFD264A7BB10047427C /* KcMachO.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KcMachO.m; sourceTree = "<group>"; };
 		C1BB6396264FC2FC00D5CF5D /* KcDebugTool_Example-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "KcDebugTool_Example-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -163,6 +165,7 @@
 				C1BB6396264FC2FC00D5CF5D /* KcDebugTool_Example-Bridging-Header.h */,
 				C1FF397F26873E7E0096514C /* KcCategoryManager.h */,
 				C1FF398026873E7E0096514C /* KcCategoryManager.m */,
+				C101196C2766E2CA0084ADAA /* KCOneViewController.swift */,
 			);
 			name = "Example for KcDebugTool";
 			path = KcDebugTool;
@@ -362,11 +365,13 @@
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-KcDebugTool_Example/Pods-KcDebugTool_Example-frameworks.sh",
+				"${BUILT_PRODUCTS_DIR}/KcDebugSwift/KcDebugSwift.framework",
 				"${BUILT_PRODUCTS_DIR}/KcDebugTool/KcDebugTool.framework",
 				"${BUILT_PRODUCTS_DIR}/fishhook/fishhook.framework",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/KcDebugSwift.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/KcDebugTool.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/fishhook.framework",
 			);
@@ -385,6 +390,7 @@
 				C1FF398126873E7E0096514C /* KcCategoryManager.m in Sources */,
 				6003F59E195388D20070C39A /* KCAppDelegate.m in Sources */,
 				6003F5A7195388D20070C39A /* KCViewController.m in Sources */,
+				C101196D2766E2CA0084ADAA /* KCOneViewController.swift in Sources */,
 				C12EAFFE264A7BB10047427C /* KcMachO.m in Sources */,
 				6003F59A195388D20070C39A /* main.m in Sources */,
 			);
@@ -554,6 +560,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 2D522C0E65C969C9B9A6C1D0 /* Pods-KcDebugTool_Tests.debug.xcconfig */;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
@@ -579,6 +586,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 42E4E66E0DB37F8FFD2E1354 /* Pods-KcDebugTool_Tests.release.xcconfig */;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PLATFORM_DIR)/Developer/Library/Frameworks",

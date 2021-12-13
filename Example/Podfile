@@ -1,3 +1,6 @@
+source 'https://cdn.cocoapods.org/'
+source "https://code.badam.mobi/badambiz_ios/zpspecs.git"
+
 use_frameworks!
 
 platform :ios, '9.0'
@@ -6,6 +9,8 @@ target 'KcDebugTool_Example' do
   pod 'KcDebugTool', :path => '../'
 
   pod 'fishhook'
+  
+#  pod 'KcDebugSwift', :path => '/Users/zhangxinyu/Desktop/work/KcDebugSwift'
   
   target 'KcDebugTool_Tests' do
     inherit! :search_paths

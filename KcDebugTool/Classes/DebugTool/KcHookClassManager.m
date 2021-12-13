@@ -14,7 +14,7 @@
 @implementation KcHookClassManager
 
 /// load之后、main之前调用 (写在这, 可以不用导入到项目内, 也可以写在load内)
-__attribute__((constructor)) void kc_hookDebugClass() {
+__attribute__((constructor)) void kc_hookDebugClass(void) {
 
     NSLog(@"KcHookClassManager start...");
 
@@ -41,32 +41,48 @@ __attribute__((constructor)) void kc_hookDebugClass() {
 
 + (void)asyncAfter_hookDebugClass {
     // hook - UINavigationController 跳转相关代码 👻
-//    [UIViewController kc_hook_navigationControllerWithShowBlock:^(Class  _Nonnull __unsafe_unretained toViewControllerType, UIViewController * _Nonnull fromViewController, UIViewController * _Nonnull toViewController) {
-//        KcHookInfo *info = [KcHookInfo makeDefaultInfo];
-//        info.logModel.isLogClassName = true;
+    [UIViewController kc_hook_navigationControllerWithShowBlock:^(Class  _Nonnull __unsafe_unretained toViewControllerType, UIViewController * _Nonnull fromViewController, UIViewController * _Nonnull toViewController) {
+        KcHookInfo *info = [KcHookInfo makeDefaultInfo];
+        info.logModel.isLogClassName = true;
+
+//        if (toViewController) {
+//            [NSObject kc_hookInstanceMethodListWithObjc:toViewController.class info:info usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 //
-////        if (toViewController) {
-////            [NSObject kc_hookInstanceMethodListWithObjc:toViewController.class info:info usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-////
-////            }];
-////        }
-//    } dismissBlock:^(UIViewController * _Nonnull fromViewController) {
-//
-//    }];
+//            }];
+//        }
+    } dismissBlock:^(UIViewController * _Nonnull fromViewController) {
+
+    }];
     
     // UIControl sendEvent 👻
-//    [NSObject kc_hook_sendActionForEventWithBlock:^(KcHookAspectInfo * _Nonnull info) {
-//
-//    }];
+    [NSObject kc_hook_sendActionForEventWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+
+    }];
     
     // gesture 看log 👻
-//    [NSObject kc_hook_gestureRecognizerAllTargetActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
-//
+    [NSObject kc_hook_gestureRecognizerAllTargetActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+
+    }];
+    
+    // 大图检测
+//    [KcDetectLargerImageTool start];
+    
+//    [NSObject.kc_hookTool kc_hookWithObjc:NSClassFromString(@"_UIBarBackground")
+//                             selectorName:NSStringFromSelector(@selector(setBackgroundColor:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        NSLog(@"aa -- %@", info.arguments.firstObject);
+//    }];
+    
+//    Class barBackgroundClass = NSClassFromString(@"_UIBarBackground");
+//    [NSObject.kc_hookTool kc_hookWithObjc:UIView.class
+//                             selectorName:NSStringFromSelector(@selector(setBackgroundColor:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        if ([[info.instance class] isKindOfClass:barBackgroundClass]) {
+//            NSLog(@"aa -- %@", info.arguments.firstObject);
+//        }
 //    }];
     
     // cell相关 👻
-//    [UITableView kc_hook_cellDidSelect];
-//    [UICollectionView kc_hook_cellDidSelect];
+    [UITableView kc_hook_cellDidSelect];
+    [UICollectionView kc_hook_cellDidSelect];
     
     // 通知
 //    [NSObject kc_hook_notificationNameWithFilterBlock:^BOOL(NSString * _Nonnull name) {

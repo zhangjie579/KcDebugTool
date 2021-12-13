@@ -13,11 +13,10 @@
 #import <mach-o/getsect.h>
 
 #import <objc/message.h>
-#import "KcDebugTool.h"
 #import "fishhook.h"
 
 #import "KcMachO.h"
-//#import "KcDebugTool_Example-Swift.h"
+#import "KcDebugTool_Example-Swift.h"
 
 @import KcDebugTool;
 
@@ -80,7 +79,7 @@
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self test1];
+
 }
 
 - (void)test1 {
@@ -88,7 +87,7 @@
 }
 
 - (void)tapClick {
-    NSLog(@"%s", _cmd);
+    
 }
 
 + (void)kc_test {

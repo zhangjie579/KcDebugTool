@@ -1,34 +1,52 @@
 PODS:
   - fishhook (0.2)
-  - KcDebugTool (0.0.5):
-    - KcDebugTool/DebugTool (= 0.0.5)
-    - KcDebugTool/extension (= 0.0.5)
-    - KcDebugTool/MachO (= 0.0.5)
-    - KcDebugTool/model (= 0.0.5)
-    - KcDebugTool/other (= 0.0.5)
-    - KcDebugTool/sdk (= 0.0.5)
-    - KcDebugTool/View (= 0.0.5)
-  - KcDebugTool/DebugTool (0.0.5):
+  - KcDebugSwift (0.0.7):
+    - KcDebugSwift/Associations (= 0.0.7)
+    - KcDebugSwift/CircularReference (= 0.0.7)
+    - KcDebugSwift/FindProperty (= 0.0.7)
+    - KcDebugSwift/Tool (= 0.0.7)
+  - KcDebugSwift/Associations (0.0.7):
+    - fishhook
+  - KcDebugSwift/CircularReference (0.0.7):
+    - KcDebugSwift/Associations
+    - KcDebugSwift/FindProperty
+    - KcDebugSwift/Tool
+  - KcDebugSwift/FindProperty (0.0.7):
+    - KcDebugSwift/Tool
+  - KcDebugSwift/Tool (0.0.7)
+  - KcDebugTool (0.0.6):
+    - KcDebugTool/DebugTool (= 0.0.6)
+    - KcDebugTool/extension (= 0.0.6)
+    - KcDebugTool/MachO (= 0.0.6)
+    - KcDebugTool/model (= 0.0.6)
+    - KcDebugTool/other (= 0.0.6)
+    - KcDebugTool/sdk (= 0.0.6)
+    - KcDebugTool/View (= 0.0.6)
+  - KcDebugTool/DebugTool (0.0.6):
     - KcDebugTool/extension
     - KcDebugTool/MachO
     - KcDebugTool/other
     - KcDebugTool/View
-  - KcDebugTool/extension (0.0.5):
+  - KcDebugTool/extension (0.0.6):
     - KcDebugTool/model
-  - KcDebugTool/MachO (0.0.5):
+  - KcDebugTool/MachO (0.0.6):
     - KcDebugTool/extension
-  - KcDebugTool/model (0.0.5):
+  - KcDebugTool/model (0.0.6):
     - KcDebugTool/sdk
-  - KcDebugTool/other (0.0.5):
+  - KcDebugTool/other (0.0.6):
+    - KcDebugSwift
+    - KcDebugTool/model
     - KcDebugTool/sdk
-  - KcDebugTool/sdk (0.0.5)
-  - KcDebugTool/View (0.0.5)
+  - KcDebugTool/sdk (0.0.6)
+  - KcDebugTool/View (0.0.6)
 
 DEPENDENCIES:
   - fishhook
   - KcDebugTool (from `../`)
 
 SPEC REPOS:
+  https://code.badam.mobi/badambiz_ios/zpspecs.git:
+    - KcDebugSwift
   trunk:
     - fishhook
 
@@ -38,8 +56,9 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   fishhook: ea19933abfe8f2f52c55fd8b6e2718467d3ebc89
-  KcDebugTool: 092a161ee3663fe453c9f4f0a7b4231b6d34dc5e
+  KcDebugSwift: 20232e4e77f184e59e7d814a30cc4f9b999c8064
+  KcDebugTool: 4a8e4690f68da1a5781ab725be04a99daa9499b7
 
-PODFILE CHECKSUM: 942e8533fbb03875339a144cf41ca2b31ec45bdd
+PODFILE CHECKSUM: 5b7718ba62ec01862a131025c61c5d0f0bcb4356
 
 COCOAPODS: 1.10.2

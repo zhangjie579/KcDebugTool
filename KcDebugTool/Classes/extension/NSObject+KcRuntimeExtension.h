@@ -121,20 +121,20 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - 调试方法 dump
 
-/// 所有方法(包括层级)
-+ (NSString *)kc_dump_allMethodDescription;
-/// 所有自定义方法
-+ (NSString *)kc_dump_allCustomMethodDescription;
-/// 某个class的方法描述
-+ (NSString *)kc_dump_methodDescriptionForClass:(Class)cls;
-
-/// 所有属性的描述
-+ (NSString *)kc_dump_allPropertyDescription;
-+ (NSString *)kc_dump_propertyDescriptionForClass:(Class)cls;
-
-/// 获取所有成员变量
-- (NSString *)kc_dump_allIvarDescription;
-- (NSString *)kc_dump_ivarDescriptionForClass:(Class)cls;
+///// 所有方法(包括层级)
+//+ (NSString *)kc_dump_allMethodDescription;
+///// 所有自定义方法
+//+ (NSString *)kc_dump_allCustomMethodDescription;
+///// 某个class的方法描述
+//+ (NSString *)kc_dump_methodDescriptionForClass:(Class)cls;
+//
+///// 所有属性的描述
+//+ (NSString *)kc_dump_allPropertyDescription;
+//+ (NSString *)kc_dump_propertyDescriptionForClass:(Class)cls;
+//
+///// 获取所有成员变量
+//- (NSString *)kc_dump_allIvarDescription;
+//- (NSString *)kc_dump_ivarDescriptionForClass:(Class)cls;
 
 + (id)kc_performSelector:(NSString *)selectorName;
 - (id)kc_performSelector:(NSString *)selectorName;
