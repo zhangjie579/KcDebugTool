@@ -201,6 +201,8 @@
     }];
 }
 
+#pragma mark - init
+
 /// hook viewController init
 + (void)kc_hook_initWithViewControllerClassNames:(NSSet<NSString *> *)classNames {
     KcHookTool *tool = [[KcHookTool alloc] init];
@@ -213,6 +215,19 @@
             return;
         }
         [KcLogParamModel logWithKey:@"init" format:@"viewController: %@", info.instance];
+    } error:nil];
+}
+
+/// hook initWithNibName
++ (void)kc_hook_initWithNibNameWithBlock:(void(^_Nullable)(KcHookAspectInfo * _Nonnull info))block {
+    [NSObject.kc_hookTool kc_hookWithObjc:[UIViewController class]
+                                 selector:@selector(initWithNibName:bundle:)
+                              withOptions:KcAspectTypeAfter
+                               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [KcLogParamModel logWithKey:@"init" format:@"viewController: %@", info.instance];
+        if (block) {
+            block(info);
+        }
     } error:nil];
 }
 

@@ -38,6 +38,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// hook viewController init
 + (void)kc_hook_initWithViewControllerClassNames:(NSSet<NSString *> *)classNames;
 
+/// hook initWithNibName
++ (void)kc_hook_initWithNibNameWithBlock:(void(^_Nullable)(KcHookAspectInfo * _Nonnull info))block;
+
 @end
 
 /// 导航栏

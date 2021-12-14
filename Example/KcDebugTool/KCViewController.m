@@ -79,7 +79,8 @@
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-
+    KCOneViewController *vc = [[KCOneViewController alloc] init];
+    [self.navigationController pushViewController:vc animated:true];
 }
 
 - (void)test1 {

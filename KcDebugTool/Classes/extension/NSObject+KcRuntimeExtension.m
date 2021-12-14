@@ -510,7 +510,7 @@ bool kc_classIsCustomClass(Class aClass);
                 block();
             }
         }];
-        objc_setAssociatedObject(self, _cmd, observer, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        objc_setAssociatedObject(self, _cmd, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     return observer;
 }
@@ -843,6 +843,8 @@ static bool isValidReadableMemory(const void *inPtr) {
 
 @end
 
+#pragma mark - KcProtocolMethodsConfigure
+
 @implementation KcProtocolMethodsConfigure
 
 /// 默认配置 - 只有hasInstanceMethod为true
@@ -857,6 +859,8 @@ static bool isValidReadableMemory(const void *inPtr) {
 }
 
 @end
+
+#pragma mark - KcDeallocObserver
 
 @implementation KcDeallocObserver
 

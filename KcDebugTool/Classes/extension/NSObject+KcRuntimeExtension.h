@@ -34,6 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+#pragma mark - 观察dealloc
+
 @interface KcDeallocObserver : NSObject
 
 @property (nonatomic) void(^deallocBlock)(void);

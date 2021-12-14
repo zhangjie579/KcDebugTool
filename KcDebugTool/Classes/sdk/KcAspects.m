@@ -885,7 +885,7 @@ static BOOL kc_isWhiteClassSelectorList(id objc, SEL selector) {
 
 /* 判断selector是否能hook
  1.黑名单(retain, release, autorelease, forwardInvocation:)不能hook
- 2.dealloc只能在它执行之前添加操作
+ 2.dealloc只能在它执行之前添加操作, 不能hook NSObject(因为内部也用了NSObject对象, 会死循环)
  3.没实现方法(instance method、class method)不能hook
  4.hook传入的self为objc - 可以hook
  5.hook传入的为Class

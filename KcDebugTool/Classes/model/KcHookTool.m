@@ -10,9 +10,14 @@
 #import <objc/message.h>
 #import "KcAspects.h"
 #import "KcHookModel.h"
-// 引用 - KCSwiftMeta 处理swift的dump className
-//#import "KcDebugTool/KcDebugTool-Swift.h"
 //#import "THInterceptor.h"
+
+// 引用 - KCSwiftMeta 处理swift的dump className
+#if __has_include("KcDebugTool/KcDebugTool-Swift.h")
+#import "KcDebugTool/KcDebugTool-Swift.h"
+#else
+#import "KcDebugTool-Swift.h"
+#endif
 
 #pragma mark - 基于Aspcet
 
@@ -291,10 +296,27 @@ void kc_addHandleBeforeExecute(id object, SEL selector, ...) {
     }
 
     if ([KcHookAspectInfo isSwiftClassName:className]) {
-        className = [NSClassFromString(@"KCSwiftMeta") performSelector:@selector(demangleName:) withObject:className];
-//        className = [KCSwiftMeta demangleName:className];
+//        className = [NSClassFromString(@"KCSwiftMeta") performSelector:@selector(demangleName:) withObject:className];
+        className = [KCSwiftMeta demangleName:className];
     }
     return className ?: @"";
+}
+
+/// 过滤命名空间
+- (nullable NSString *)classNameFilterNameSpace {
+    NSString *_Nullable className = [self className];
+    
+    if (!className) {
+        return className;
+    }
+    
+    // 处理swift 命名空间
+    NSRange range = [className rangeOfString:@"." options:NSBackwardsSearch];
+    if (range.location != NSNotFound) {
+        className = [className substringToIndex:range.location + range.length];
+    }
+    
+    return className;
 }
 
 /// 过滤selectorName前缀

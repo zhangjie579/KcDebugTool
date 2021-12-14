@@ -64,7 +64,25 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 
     }];
     
-    // 大图检测
+    // cell相关 👻
+    [UITableView kc_hook_cellDidSelect];
+    [UICollectionView kc_hook_cellDidSelect];
+    
+    { // UIViewController dealloc 👻
+        // 如果这个方法会crash, 可用下发的方法
+        [UIViewController kc_hook_deallocWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+            [KcLogParamModel logWithKey:@"dealloc" format:@"%@", info.className];
+        }];
+        
+//        [UIViewController kc_hook_initWithNibNameWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+//            NSString *className = info.className;
+//            [info.instance kc_deallocObserverWithBlock:^{
+//                [KcLogParamModel logWithKey:@"dealloc" format:@"%@", className];
+//            }];
+//        }];
+    }
+    
+    // 大图检测 👻
 //    [KcDetectLargerImageTool start];
     
 //    [NSObject.kc_hookTool kc_hookWithObjc:NSClassFromString(@"_UIBarBackground")
@@ -79,10 +97,6 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 //            NSLog(@"aa -- %@", info.arguments.firstObject);
 //        }
 //    }];
-    
-    // cell相关 👻
-    [UITableView kc_hook_cellDidSelect];
-    [UICollectionView kc_hook_cellDidSelect];
     
     // 通知
 //    [NSObject kc_hook_notificationNameWithFilterBlock:^BOOL(NSString * _Nonnull name) {
