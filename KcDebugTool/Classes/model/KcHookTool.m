@@ -310,10 +310,10 @@ void kc_addHandleBeforeExecute(id object, SEL selector, ...) {
         return className;
     }
     
-    // 处理swift 命名空间
-    NSRange range = [className rangeOfString:@"." options:NSBackwardsSearch];
+    // 处理swift 命名空间, 不能用后面往前面查询, 因为存在多层命名空间的问题
+    NSRange range = [className rangeOfString:@"."];
     if (range.location != NSNotFound) {
-        className = [className substringToIndex:range.location + range.length];
+        className = [className substringFromIndex:range.location + range.length];
     }
     
     return className;

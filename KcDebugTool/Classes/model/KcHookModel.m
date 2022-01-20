@@ -9,6 +9,11 @@
 #import "KcHookModel.h"
 #import "KcHookTool.h"
 #import "KcAspects.h"
+#if __has_include("KcDebugTool/KcDebugTool-Swift.h")
+#import "KcDebugTool/KcDebugTool-Swift.h"
+#else
+#import "KcDebugTool-Swift.h"
+#endif
 
 @implementation KcHookModel
 
@@ -192,6 +197,16 @@
     [cacheTime setObject:@(time) forKey:identity];
     
     return false;
+}
+
+/// 解析name
++ (NSString *)demangleNameWithName:(NSString *)name {
+    return [KCSwiftMeta demangleName:name];
+}
+
+/// 解析name
++ (NSString *)demangleNameWithCString:(const char *)cstring {
+    return [KCSwiftMeta demangleWithSymbol:(const int8_t *)cstring];
 }
 
 @end

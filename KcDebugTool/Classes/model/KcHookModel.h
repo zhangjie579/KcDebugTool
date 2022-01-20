@@ -56,6 +56,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)defaultLogWithInfo:(KcHookAspectInfo *)info;
 
+/// 解析name
++ (NSString *)demangleNameWithName:(NSString *)name;
+
+/// 解析name
++ (NSString *)demangleNameWithCString:(const char *)cstring;
+
 @end
 
 /// 方法hook参数
