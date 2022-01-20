@@ -13,9 +13,15 @@
 
 @implementation KcHookClassManager
 
-/// load之后、main之前调用 (写在这, 可以不用导入到项目内, 也可以写在load内)
-__attribute__((constructor)) void kc_hookDebugClass(void) {
+#pragma mark - 自启动
 
+/// load之后、main之前调用 (写在这, 可以不用导入到项目内, 也可以写在load内)
+/* 说明
+ 1. 现在iOS已经禁用了通过runtime的接口获取method, 获取的为nil, 如何 hook 私有方法 ❓
+    * 可以通过自己解析MachO
+    * 符号断点 👻
+ */
+__attribute__((constructor)) void kc_hookDebugClass(void) {
     NSLog(@"KcHookClassManager start...");
 
     NSArray<NSString *> *hookProjectList = @[@"KcHookProject"];
@@ -74,6 +80,13 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
             [KcLogParamModel logWithKey:@"dealloc" format:@"%@", info.className];
         }];
         
+        
+        // 监听UIPresentationController
+//        [NSObject.kc_hookTool kc_hookWithObjc:UIPresentationController.class
+//                                 selectorName:NSStringFromSelector(@selector(_setPresentingViewController:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//            NSLog(@"aa -- %@", info.arguments.firstObject);
+//        }];
+        
 //        [UIViewController kc_hook_initWithNibNameWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 //            NSString *className = info.className;
 //            [info.instance kc_deallocObserverWithBlock:^{
@@ -84,6 +97,9 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     
     // 大图检测 👻
 //    [KcDetectLargerImageTool start];
+    
+    // 第一响应者
+//    [UIView kc_hook_firstResponder];
     
 //    [NSObject.kc_hookTool kc_hookWithObjc:NSClassFromString(@"_UIBarBackground")
 //                             selectorName:NSStringFromSelector(@selector(setBackgroundColor:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
@@ -197,8 +213,12 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 
 #pragma mark - clang插桩hook(会hook所有自定义的方法)
 
-/* 使用
+/* 使用 https://clang.llvm.org/docs/SanitizerCoverage.html
  1.Other C Flags , 添加 -fsanitize-coverage=func,trace-pc-guard
+ * 搜索Other Swift Flags , 添加两条配置即可 :
+     * -sanitize-coverage=func
+     * -sanitize=undefined
+ 
  2.打开下面2个方法即可
  */
 
@@ -219,13 +239,13 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 //    Dl_info info;
 //    dladdr(PC, &info);
 //
-//    printf("fname=%s \nfbase=%p \nsname=%s\nsaddr=%p \n", info.dli_fname, info.dli_fbase, info.dli_sname, info.dli_saddr);
+////    printf("fbase=%p sname=%s saddr=%p %p \n", info.dli_fbase, info.dli_sname, info.dli_saddr, PC);
 ////    NSString *name = [NSString stringWithUTF8String:info.dli_sname]; // -[NLRoomDRHelper onTimer:]
 ////    if (name.length > 1 && [name containsString:@"["]) {
 ////        name = [name substringFromIndex:2];
 ////    }
 ////    if ([name hasPrefix:@"NLRoomViewController"]) {
-////        printf("kc--- 方法名=%s saddr=%p \n", info.dli_sname, info.dli_saddr);
+////        printf("kc--- 方法名=%s saddr=%p, %p \n", info.dli_sname, info.dli_saddr, PC);
 ////    }
 //}
 

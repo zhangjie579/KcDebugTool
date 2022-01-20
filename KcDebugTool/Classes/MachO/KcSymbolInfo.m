@@ -29,6 +29,7 @@
         self.imageIndex = imageIndex;
         self.imageName = _dyld_get_image_name(imageIndex);
         self.header = (const kc_mach_header_t *)_dyld_get_image_header(imageIndex);
+        self.vmaddr_slide = _dyld_get_image_vmaddr_slide(imageIndex);
         [self handleLoadCommand];
         [self computerTextSectionStartAndEnd];
         
@@ -37,9 +38,15 @@
     return self;
 }
 
+/// 是否包含在text section
+- (BOOL)containTextSectionWithAddress:(const void *)address {
+    return address >= (const void *)self.textSectionStart && address <= (const void *)self.textSectionStop;
+}
+
 /// 是否包含
 - (BOOL)containWithAddress:(const void *)address {
-    return address >= (const void *)self.start && address <= (const void *)self.stop;
+    intptr_t value = (intptr_t)address - self.vmaddr_slide;
+    return value >= self.startAddress && value < self.endAddress;
 }
 
 /// 根据地址解析符号信息
@@ -51,7 +58,7 @@
         for (uint32_t i = 0; i < self.symtab->nsyms; i++, sym++) {
             if (sym->n_type == 0xf) { // _objc_class_$_viewController 这种符号类型为0xf
                 KcSymbolInfo *info = [[KcSymbolInfo alloc] init];
-                info.symbol = sym;
+                info.symbol = sym[i];
                 [self.symbolInfos addObject:info];
             }
         }
@@ -60,16 +67,65 @@
     intptr_t value = (intptr_t)ptr - ((intptr_t)self.header - (intptr_t)self.seg_text->vmaddr);
     
     for (KcSymbolInfo *symbolInfo in self.symbolInfos) {
-        if (symbolInfo.symbol->n_value == value) {
+        if (symbolInfo.symbol.n_value == value) {
             info->dli_fname = self.imageName;
             info->dli_fbase = (void *)self.header;
-            info->dli_sname = strings + symbolInfo.symbol->n_un.n_strx + 1;
+            info->dli_sname = strings + symbolInfo.symbol.n_un.n_strx + 1;
             
             return 1;
         }
     }
     
     return 0;
+}
+
+/// 解析
+- (BOOL)dladdr:(const void *)ptr info:(Dl_info *)info {
+    if ((intptr_t)ptr == 0) {
+        return false;
+    }
+    
+    kc_nlist_t *symbolTable = self.symbols;
+    
+    if (symbolTable == 0) {
+        return false;
+    }
+    
+    intptr_t addressWithSlide = (intptr_t)ptr - ((intptr_t)self.header - (intptr_t)self.seg_text->vmaddr);
+    
+    const kc_nlist_t* bestMatch = NULL; // 最佳匹配
+    uintptr_t bestDistance = ULONG_MAX;
+    
+    for (uint32_t iSym = 0; iSym < self.symtab->nsyms; iSym++) {
+        // 5.1.If n_value is 0, the symbol refers to an external object. (n_value为0, 该符号是外部对象)
+        if (symbolTable[iSym].n_value == 0) {
+            continue;
+        }
+        uintptr_t symbolBase = symbolTable[iSym].n_value;
+        uintptr_t currentDistance = addressWithSlide - symbolBase;
+        // 排布: symbolBase ... addressWithSlide 👻
+        if((addressWithSlide >= symbolBase) && (currentDistance <= bestDistance)) {
+            bestMatch = symbolTable + iSym;
+            bestDistance = currentDistance;
+        }
+    }
+    if (bestMatch != NULL) {
+        // 地址 + ALSR
+        info->dli_saddr = (void*)(bestMatch->n_value + self.vmaddr_slide);
+        if (bestMatch->n_desc == 16) {
+            // This image has been stripped. The name is meaningless, and
+            // almost certainly resolves to "_mh_execute_header"
+            info->dli_sname = NULL;
+        }
+        else {
+            // 求符号名
+            info->dli_sname = (char*)((intptr_t)self.stringTable + (intptr_t)bestMatch->n_un.n_strx);
+            info->dli_sname = [self demangleSystemWithCString:info->dli_sname];
+        }
+        return true;
+    }
+    
+    return false;
 }
 
 /// 字符串表
@@ -91,20 +147,33 @@
 /// 处理load command
 - (void)handleLoadCommand {
     struct load_command *cmd = (struct load_command *)((intptr_t)self.header + sizeof(kc_mach_header_t));
+    
+    UInt64 startAddress = 0;
+    UInt64 endAddress = 0;
     for (int i = 0; i < self.header->ncmds; i++, cmd = (struct load_command *)((intptr_t)cmd + cmd->cmdsize)) {
         switch(cmd->cmd) {
             case LC_SEGMENT:
-            case LC_SEGMENT_64:
+            case LC_SEGMENT_64: {
+                // 记录地址
+                if (startAddress == 0) {
+                    startAddress = ((kc_segment_command_t *)cmd)->vmaddr;
+                } else {
+                    endAddress = ((kc_segment_command_t *)cmd)->vmaddr + ((kc_segment_command_t *)cmd)->vmsize;
+                }
+                
                 if (!strcmp(((kc_segment_command_t *)cmd)->segname, SEG_TEXT))
                     self.seg_text = (kc_segment_command_t *)cmd;
                 else if (!strcmp(((kc_segment_command_t *)cmd)->segname, SEG_LINKEDIT))
                     self.seg_linkedit = (kc_segment_command_t *)cmd;
                 break;
-
+            }
             case LC_SYMTAB:
                 self.symtab = (struct symtab_command *)cmd;
         }
     }
+    
+    self.startAddress = startAddress;
+    self.endAddress = endAddress;
 }
 
 /// 计算text段的开始、结束
@@ -113,8 +182,34 @@
     if (section == 0) {
         return;
     }
-    self.start = (void *)(section->addr + _dyld_get_image_vmaddr_slide(self.imageIndex));
-    self.stop = (void *)((intptr_t)self.start + section->size);
+    self.textSectionStart = (void *)(section->addr + _dyld_get_image_vmaddr_slide(self.imageIndex));
+    self.textSectionStop = (void *)((intptr_t)self.textSectionStart + section->size);
+}
+
+/// 解析符号名
+- (const char *)demangleSystemWithCString:(const char *)cstring {
+    if (strlen(cstring) <= 0) {
+        return cstring;
+    }
+    
+    if (cstring[0] == '_') {
+        cstring++;
+    }
+    
+    return cstring;
+    
+//    // 过滤oc方法
+//    if (strncmp(cstring, "-[", 2) == 0 || strncmp(cstring, "+[", 2) == 0) {
+//        return cstring;
+//    }
+//
+//    const char *dst = [KcLogParamModel demangleNameWithCString:cstring].UTF8String;
+//
+//    if (dst == NULL) { // 兼容解析有问题的情况
+//        return cstring;
+//    } else {
+//        return dst;
+//    }
 }
 
 - (NSMutableArray<KcSymbolInfo *> *)symbolInfos {
@@ -125,6 +220,8 @@
 }
 
 @end
+
+#pragma mark - KcDylibManager
 
 @interface KcDylibManager ()
 
@@ -147,8 +244,29 @@
 - (void)start {
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
-        KcDylibInfo *infos = [[KcDylibInfo alloc] initWithImageIndex:i];
-        [self.dylibInfos addObject:infos];
+        const char *imageName = _dyld_get_image_name(i);
+        if (!imageName || strcmp(imageName, "") == 0) {
+            continue;
+        }
+        
+        // 取出name
+        NSString *imageNameStr = @(imageName);
+        NSRange range = [imageNameStr rangeOfString:@"/" options:NSBackwardsSearch];
+        if (range.location != NSNotFound) {
+            imageNameStr = [imageNameStr substringFromIndex:range.location + range.length];
+        }
+        
+        if (self.whiteImageNames.count > 0) {
+            for (NSString *name in self.whiteImageNames) {
+                if ([imageNameStr hasPrefix:name]) {
+                    KcDylibInfo *infos = [[KcDylibInfo alloc] initWithImageIndex:i];
+                    [self.dylibInfos addObject:infos];
+                }
+            }
+        } else {
+            KcDylibInfo *infos = [[KcDylibInfo alloc] initWithImageIndex:i];
+            [self.dylibInfos addObject:infos];
+        }
     }
 }
 
@@ -163,7 +281,7 @@
             continue;
         }
         
-        [dylibInfo dladdrWithPtr:ptr info:info];
+        [dylibInfo dladdr:ptr info:info];
         return 1;
     }
     
@@ -175,6 +293,13 @@
         _dylibInfos = [[NSMutableArray alloc] init];
     }
     return _dylibInfos;
+}
+
+- (NSMutableArray<NSString *> *)whiteImageNames {
+    if (!_whiteImageNames) {
+        _whiteImageNames = [[NSMutableArray alloc] init];
+    }
+    return _whiteImageNames;
 }
 
 @end

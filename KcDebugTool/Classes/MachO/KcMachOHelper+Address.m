@@ -123,6 +123,7 @@
 }
 
 /// 获取地址为address的二进制镜像的信息Dl_info
+/// 通常查询符号表，找到最佳匹配的address, 从而得到result
 //bool ksdl_dladdr(const uintptr_t address, Dl_info* const info)
 + (BOOL)dladdr:(const uintptr_t)address info:(Dl_info *const)info {
     info->dli_fname = NULL;

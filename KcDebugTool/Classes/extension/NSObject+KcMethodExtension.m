@@ -330,7 +330,8 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
     id action = info.arguments.firstObject;
     id target = info.arguments.count >= 2 ? info.arguments[1] : nil;
     
-    [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, target: %@", action, target];
+    NSString *className = [KcLogParamModel demangleNameWithName:NSStringFromClass([target class])];
+    [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, class: %@, target: %@", action, className, target];
 }
 
 @end

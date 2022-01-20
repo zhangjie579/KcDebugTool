@@ -12,7 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface KcSymbolInfo : NSObject
 
-@property (nonatomic) kc_nlist_t *symbol;
+@property (nonatomic) kc_nlist_t symbol;
 
 @end
 
@@ -20,6 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface KcDylibInfo : NSObject
 
 @property (nonatomic) int imageIndex;
+@property (nonatomic) intptr_t vmaddr_slide;
 
 @property (nonatomic) const kc_mach_header_t *header;
 @property (nonatomic) kc_segment_command_t *seg_linkedit;
@@ -27,10 +28,15 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) struct symtab_command *symtab;
 @property (nonatomic) kc_nlist_t *symbols;
 
+/// 开始地址
+@property (nonatomic) intptr_t startAddress;
+/// 结束地址
+@property (nonatomic) intptr_t endAddress;
+
 @property (nonatomic, readonly) NSMutableArray<KcSymbolInfo *> *symbolInfos;
 
-@property (nonatomic) void *start;
-@property (nonatomic) void *stop;
+@property (nonatomic) void *textSectionStart;
+@property (nonatomic) void *textSectionStop;
 @property (nonatomic) const char *imageName;
 
 - (instancetype)initWithImageIndex:(int)imageIndex;
@@ -38,8 +44,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// 是否包含
 - (BOOL)containWithAddress:(const void *)address;
 
+/// 是否包含在text section
+- (BOOL)containTextSectionWithAddress:(const void *)address;
+
 /// 根据地址解析符号信息
 - (int)dladdrWithPtr:(const void *)ptr info:(Dl_info *)info;
+
+/// 解析
+- (BOOL)dladdr:(const void *)ptr info:(Dl_info *)info;
 
 /// 字符串表
 - (const char *)stringTable;
@@ -52,6 +64,9 @@ NS_ASSUME_NONNULL_BEGIN
 @interface KcDylibManager : NSObject
 
 @property (nonatomic, readonly) NSMutableArray<KcDylibInfo *> *dylibInfos;
+
+/// imageName 白名单(如果为空的话, 全部处理)
+@property (nonatomic) NSMutableArray<NSString *> *whiteImageNames;
 
 + (instancetype)shared;
 

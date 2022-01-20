@@ -31,6 +31,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// 思路: 遍历所有image镜像, 遍历每个镜像image的load command, 看address是否在load command区间内
 + (uint32_t)imageIndexContainingAddress:(const uintptr_t)address;
 
+/// 类似于系统的dladdr
++ (BOOL)dladdr:(const uintptr_t)address info:(Dl_info *const)info;
+
 @end
 
 NS_ASSUME_NONNULL_END
