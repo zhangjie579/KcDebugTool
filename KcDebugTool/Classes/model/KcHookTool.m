@@ -302,6 +302,15 @@ void kc_addHandleBeforeExecute(id object, SEL selector, ...) {
     return className ?: @"";
 }
 
+/// 对象的class
+- (nullable Class)instanceClass {
+    if (!self.instance) {
+        return nil;
+    }
+
+    return object_getClass(self.instance);
+}
+
 /// 过滤命名空间
 - (nullable NSString *)classNameFilterNameSpace {
     NSString *_Nullable className = [self className];

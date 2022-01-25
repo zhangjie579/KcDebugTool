@@ -77,19 +77,21 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     { // UIViewController dealloc 👻
         // 如果这个方法会crash, 可用下发的方法
         [UIViewController kc_hook_deallocWithBlock:^(KcHookAspectInfo * _Nonnull info) {
+            // 过滤非自定义的class
+            if (!info.instanceClass || ![NSObject kc_isCustomClass:info.instanceClass]) {
+                return;
+            }
             [KcLogParamModel logWithKey:@"dealloc" format:@"%@", info.className];
         }];
         
-        
-        // 监听UIPresentationController
-//        [NSObject.kc_hookTool kc_hookWithObjc:UIPresentationController.class
-//                                 selectorName:NSStringFromSelector(@selector(_setPresentingViewController:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-//            NSLog(@"aa -- %@", info.arguments.firstObject);
-//        }];
-        
 //        [UIViewController kc_hook_initWithNibNameWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 //            NSString *className = info.className;
+//            Class __nullable instanceClass = info.instanceClass;
 //            [info.instance kc_deallocObserverWithBlock:^{
+//                // 过滤非自定义的class
+//                if (!instanceClass || ![NSObject kc_isCustomClass:instanceClass]) {
+//                    return;
+//                }
 //                [KcLogParamModel logWithKey:@"dealloc" format:@"%@", className];
 //            }];
 //        }];
@@ -100,6 +102,12 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     
     // 第一响应者
 //    [UIView kc_hook_firstResponder];
+    
+    // 监听UIPresentationController
+//    [NSObject.kc_hookTool kc_hookWithObjc:UIPresentationController.class
+//                             selectorName:NSStringFromSelector(@selector(_setPresentingViewController:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        NSLog(@"aa -- %@", info.arguments.firstObject);
+//    }];
     
 //    [NSObject.kc_hookTool kc_hookWithObjc:NSClassFromString(@"_UIBarBackground")
 //                             selectorName:NSStringFromSelector(@selector(setBackgroundColor:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {

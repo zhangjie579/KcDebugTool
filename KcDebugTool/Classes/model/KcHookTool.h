@@ -40,6 +40,9 @@ typedef NS_OPTIONS(NSUInteger, KcAspectType) {
 
 - (nullable NSString *)className;
 
+/// 对象的class
+- (nullable Class)instanceClass;
+
 /// 过滤命名空间
 - (nullable NSString *)classNameFilterNameSpace;
 
