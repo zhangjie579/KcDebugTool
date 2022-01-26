@@ -331,7 +331,13 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
     id target = info.arguments.count >= 2 ? info.arguments[1] : nil;
     
     NSString *className = [KcLogParamModel demangleNameWithName:NSStringFromClass([target class])];
-    [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, class: %@, target: %@", action, className, target];
+    
+    // 如果target非自定义class, 不log target
+    if ([NSObject kc_isCustomClass:[target class]]) {
+        [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, class: %@, target: %@", action, className, target];
+    } else {
+        [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, class: %@", action, className];
+    }
 }
 
 @end
