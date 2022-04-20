@@ -36,7 +36,7 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 
     // 延迟执行的原因: 代码里面有在app开始的时候有通过method_exchangeImplementations来hook方法, 而这边是通过Aspect来hook; "Aspect hook必须在method_exchangeImplementations hook之后"
     // 因为走forwardInvocation的时候, 会走到第1次hook的方法(比如是: 前缀_方法名), 它的实现是_objc_msgForward, 还是会走到Aspect的forwardInvocation, 但是获取的原始方法是: 前缀_方法名, aspect后的方法是: aspect__前缀_方法名, 找不到这个方法, crash
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [KcHookClassManager asyncAfter_hookDebugClass];
         [classList makeObjectsPerformSelector:@selector(startDelay)];
     });
@@ -109,9 +109,18 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 //        NSLog(@"aa -- %@", info.arguments.firstObject);
 //    }];
     
-//    [NSObject.kc_hookTool kc_hookWithObjc:NSClassFromString(@"_UIBarBackground")
-//                             selectorName:NSStringFromSelector(@selector(setBackgroundColor:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-//        NSLog(@"aa -- %@", info.arguments.firstObject);
+//    [NSObject.kc_hookTool kc_hookWithObjc:UITableView.class
+//                             selectorName:NSStringFromSelector(@selector(setContentSize:))
+//                              withOptions:KcAspectTypeBefore
+//                               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        NSLog(@"aa -- 1, %@", info.arguments.firstObject);
+//    }];
+//    
+//    [NSObject.kc_hookTool kc_hookWithObjc:UITableView.class
+//                             selectorName:NSStringFromSelector(@selector(reloadData))
+//                              withOptions:KcAspectTypeAfter
+//                               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        NSLog(@"aa -- 2, height: %d", [info.instance contentSize].height);
 //    }];
     
 //    Class barBackgroundClass = NSClassFromString(@"_UIBarBackground");

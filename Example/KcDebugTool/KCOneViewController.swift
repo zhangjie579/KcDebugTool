@@ -17,4 +17,13 @@ class KCOneViewController: UIViewController {
         view.backgroundColor = .lightGray
     }
 
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        didtap()
+    }
+}
+
+private extension KCOneViewController {
+    func didtap() {
+        print("点击...")
+    }
 }

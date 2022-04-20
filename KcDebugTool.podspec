@@ -89,5 +89,18 @@ TODO: Add long description of the pod here.
       d.dependency 'KcDebugTool/MachO'
 #      m.dependency 'TrampolineHook'
   end
+  
+  # MARK: - Zombie 野指针
+  s.subspec 'Zombie' do |ss|
+      ss.libraries = "z", "c++"
+      
+      ss.requires_arc = false # 默认为MRC
+      ss.source_files = 'KcDebugTool/Classes/Zombie/**/*'
+      ss.requires_arc = 'KcDebugTool/Classes/Zombie/ARC/**/*' # ARC的文件
+      
+      # 把.mm相关的头文件过滤, 为了兼容swift (不会出现在umbrella.h文件内)
+      # 不能加[], 多个用, 分割
+      ss.private_header_files = 'KcTestZoobie/Classes/Zombie/DDZombie.h', 'KcDebugTool/Classes/Zombie/ARC/DDThreadStack.h'
+  end
 
 end

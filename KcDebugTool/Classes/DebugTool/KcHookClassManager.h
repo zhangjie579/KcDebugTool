@@ -18,6 +18,7 @@
 #import "UITableView+KcDebugTool.h"
 #import "SRBlockStrongReferenceCollector.h"
 #import "KcDetectLargerImageTool.h"
+#import "UIWindow+KcDebugTool.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

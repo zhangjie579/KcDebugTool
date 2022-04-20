@@ -13,6 +13,7 @@
 //#import "THInterceptor.h"
 
 // 引用 - KCSwiftMeta 处理swift的dump className
+// canImport(MLeaksFinder) swift可以这样判断
 #if __has_include("KcDebugTool/KcDebugTool-Swift.h")
 #import "KcDebugTool/KcDebugTool-Swift.h"
 #else

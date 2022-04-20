@@ -48,6 +48,22 @@
 //    return 0;
 //}
 
+typedef struct NominalTypeDescriptor {
+  unsigned long kind;
+  const char *name;
+  unsigned long numFields;
+  unsigned long fieldOffsetVectorOffset;
+  const char *fieldNames;
+} NominalTypeDescriptor;
+
+typedef struct ClassMetadata {
+  void *valueWitnessTable;
+  struct ClassMetadata *isa;
+  struct ClassMetadata *super;
+  void *data[3];
+  NominalTypeDescriptor *descriptor;
+  unsigned long instanceSize, instanceAlign;
+} ClassMetadata;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -56,6 +72,7 @@
     self.v1.frame = CGRectMake(100, 100, 100, 100);
     
     NSArray<NSObject *> *objc = [KcMachOHelper globalObjects];
+    
     
 //    uintptr_t a = [KcMachOHelper defaultBaseAddressWithImageName:[NSBundle mainBundle].executablePath.UTF8String];
     
@@ -80,7 +97,9 @@
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     KCOneViewController *vc = [[KCOneViewController alloc] init];
-    [self.navigationController pushViewController:vc animated:true];
+//    [self.navigationController pushViewController:vc animated:true];
+    
+
 }
 
 - (void)test1 {
