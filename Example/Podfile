@@ -1,5 +1,5 @@
-source 'https://cdn.cocoapods.org/'
-source "https://code.badam.mobi/badambiz_ios/zpspecs.git"
+# source 'https://cdn.cocoapods.org/'
+source "https://github.com/CocoaPods/Specs.git"
 
 use_frameworks!
 

@@ -1,56 +1,53 @@
 PODS:
   - fishhook (0.2)
-  - KcDebugSwift (0.0.7):
-    - KcDebugSwift/Associations (= 0.0.7)
-    - KcDebugSwift/CircularReference (= 0.0.7)
-    - KcDebugSwift/FindProperty (= 0.0.7)
-    - KcDebugSwift/Tool (= 0.0.7)
-  - KcDebugSwift/Associations (0.0.7):
+  - KcDebugSwift (0.1.0):
+    - KcDebugSwift/Associations (= 0.1.0)
+    - KcDebugSwift/CircularReference (= 0.1.0)
+    - KcDebugSwift/FindProperty (= 0.1.0)
+    - KcDebugSwift/Tool (= 0.1.0)
+  - KcDebugSwift/Associations (0.1.0):
     - fishhook
-  - KcDebugSwift/CircularReference (0.0.7):
+  - KcDebugSwift/CircularReference (0.1.0):
     - KcDebugSwift/Associations
     - KcDebugSwift/FindProperty
     - KcDebugSwift/Tool
-  - KcDebugSwift/FindProperty (0.0.7):
+  - KcDebugSwift/FindProperty (0.1.0):
     - KcDebugSwift/Tool
-  - KcDebugSwift/Tool (0.0.7)
-  - KcDebugTool (0.0.8):
-    - KcDebugTool/DebugTool (= 0.0.8)
-    - KcDebugTool/extension (= 0.0.8)
-    - KcDebugTool/MachO (= 0.0.8)
-    - KcDebugTool/model (= 0.0.8)
-    - KcDebugTool/other (= 0.0.8)
-    - KcDebugTool/sdk (= 0.0.8)
-    - KcDebugTool/View (= 0.0.8)
-    - KcDebugTool/Zombie (= 0.0.8)
-  - KcDebugTool/DebugTool (0.0.8):
+  - KcDebugSwift/Tool (0.1.0)
+  - KcDebugTool (0.1.0):
+    - KcDebugTool/DebugTool (= 0.1.0)
+    - KcDebugTool/extension (= 0.1.0)
+    - KcDebugTool/MachO (= 0.1.0)
+    - KcDebugTool/model (= 0.1.0)
+    - KcDebugTool/other (= 0.1.0)
+    - KcDebugTool/sdk (= 0.1.0)
+    - KcDebugTool/View (= 0.1.0)
+  - KcDebugTool/DebugTool (0.1.0):
     - KcDebugTool/extension
     - KcDebugTool/MachO
     - KcDebugTool/other
     - KcDebugTool/View
-  - KcDebugTool/extension (0.0.8):
+  - KcDebugTool/extension (0.1.0):
     - KcDebugTool/model
-  - KcDebugTool/MachO (0.0.8):
+  - KcDebugTool/MachO (0.1.0):
     - KcDebugTool/extension
-  - KcDebugTool/model (0.0.8):
+  - KcDebugTool/model (0.1.0):
     - KcDebugTool/sdk
-  - KcDebugTool/other (0.0.8):
+  - KcDebugTool/other (0.1.0):
     - KcDebugSwift
     - KcDebugTool/model
     - KcDebugTool/sdk
-  - KcDebugTool/sdk (0.0.8)
-  - KcDebugTool/View (0.0.8)
-  - KcDebugTool/Zombie (0.0.8)
+  - KcDebugTool/sdk (0.1.0)
+  - KcDebugTool/View (0.1.0)
 
 DEPENDENCIES:
   - fishhook
   - KcDebugTool (from `../`)
 
 SPEC REPOS:
-  https://code.badam.mobi/badambiz_ios/zpspecs.git:
-    - KcDebugSwift
-  trunk:
+  https://github.com/CocoaPods/Specs.git:
     - fishhook
+    - KcDebugSwift
 
 EXTERNAL SOURCES:
   KcDebugTool:
@@ -58,9 +55,9 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   fishhook: ea19933abfe8f2f52c55fd8b6e2718467d3ebc89
-  KcDebugSwift: 20232e4e77f184e59e7d814a30cc4f9b999c8064
-  KcDebugTool: 8503719be06c9da4ee946513d41558718a3d5763
+  KcDebugSwift: c33e9ad6f66b036e3fe92e026acd25b078f6a293
+  KcDebugTool: c6c3da0bd7b8df2ef0c2522b123c5c9b5cd77cc1
 
-PODFILE CHECKSUM: 5b7718ba62ec01862a131025c61c5d0f0bcb4356
+PODFILE CHECKSUM: aba51d207d691808111cdf6357e2281b7a90c528
 
-COCOAPODS: 1.10.2
+COCOAPODS: 1.11.3

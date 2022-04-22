@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'KcDebugTool'
-  s.version          = '0.0.8'
+  s.version          = '0.1.0'
   s.summary          = 'A short description of KcDebugTool.'
 
 # This description is used to generate tags and improve search results.
@@ -21,11 +21,11 @@ Pod::Spec.new do |s|
 TODO: Add long description of the pod here.
                        DESC
 
-  s.homepage         = 'https://code.badam.mobi/zhangjie/kcdebugtool.git'
+  s.homepage         = 'https://github.com/zhangjie579'
   # s.screenshots     = 'www.example.com/screenshots_1', 'www.example.com/screenshots_2'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { '张杰' => '527512749@qq.com' }
-  s.source           = { :git => 'https://code.badam.mobi/zhangjie/kcdebugtool.git', :tag => s.version.to_s }
+  s.source           = { :git => 'https://github.com/zhangjie579/KcDebugTool.git', :tag => s.version.to_s }
   # s.social_media_url = 'https://twitter.com/<TWITTER_USERNAME>'
 
   s.ios.deployment_target = '8.0'
@@ -91,16 +91,16 @@ TODO: Add long description of the pod here.
   end
   
   # MARK: - Zombie 野指针
-  s.subspec 'Zombie' do |ss|
-      ss.libraries = "z", "c++"
+  # s.subspec 'Zombie' do |ss|
+  #     ss.libraries = "z", "c++"
       
-      ss.requires_arc = false # 默认为MRC
-      ss.source_files = 'KcDebugTool/Classes/Zombie/**/*'
-      ss.requires_arc = 'KcDebugTool/Classes/Zombie/ARC/**/*' # ARC的文件
+  #     ss.requires_arc = false # 默认为MRC
+  #     ss.source_files = 'KcDebugTool/Classes/Zombie/**/*'
+  #     ss.requires_arc = 'KcDebugTool/Classes/Zombie/ARC/**/*' # ARC的文件
       
-      # 把.mm相关的头文件过滤, 为了兼容swift (不会出现在umbrella.h文件内)
-      # 不能加[], 多个用, 分割
-      ss.private_header_files = 'KcTestZoobie/Classes/Zombie/DDZombie.h', 'KcDebugTool/Classes/Zombie/ARC/DDThreadStack.h'
-  end
+  #     # 把.mm相关的头文件过滤, 为了兼容swift (不会出现在umbrella.h文件内)
+  #     # 不能加[], 多个用, 分割
+  #     ss.private_header_files = 'KcTestZoobie/Classes/Zombie/DDZombie.h', 'KcDebugTool/Classes/Zombie/ARC/DDThreadStack.h'
+  # end
 
 end
