@@ -70,6 +70,9 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 
     }];
     
+    // 最佳响应者
+    [UIWindow kc_hook_hitTest];
+    
     // cell相关 👻
     [UITableView kc_hook_cellDidSelect];
     [UICollectionView kc_hook_cellDidSelect];
@@ -107,9 +110,6 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     
     // 第一响应者
 //    [UIView kc_hook_firstResponder];
-    
-    // 最佳响应者
-    [UIWindow kc_hook_hitTest];
     
     // 监听UIPresentationController
 //    [NSObject.kc_hookTool kc_hookWithObjc:UIPresentationController.class

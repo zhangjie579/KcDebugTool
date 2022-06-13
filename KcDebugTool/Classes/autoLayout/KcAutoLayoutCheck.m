@@ -199,6 +199,7 @@ static BOOL(^gCheckMissMaxLayoutIMP)(UIView *, UILayoutConstraintAxis);
         IMP imp = class_getMethodImplementation(object_getClass(cls), selector);
         
         if (!imp) {
+            [KcLogParamModel logWithKey:@"自动布局❌" format:@"%@", @"需要注入检测方法, 或者替换SnapKit库"];
             return false;
         }
         
