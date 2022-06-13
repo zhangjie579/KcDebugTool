@@ -28,7 +28,7 @@ TODO: Add long description of the pod here.
   s.source           = { :git => 'https://github.com/zhangjie579/KcDebugTool.git', :tag => s.version.to_s }
   # s.social_media_url = 'https://twitter.com/<TWITTER_USERNAME>'
 
-  s.ios.deployment_target = '8.0'
+  s.ios.deployment_target = '9.0'
   s.swift_version = "5.0"
 
 #  s.source_files = 'KcDebugTool/Classes/**/*'
@@ -44,14 +44,25 @@ TODO: Add long description of the pod here.
   s.subspec 'View' do |v|
       v.source_files = 'KcDebugTool/Classes/View/**/*'
       v.frameworks = 'UIKit'
+      v.dependency "KcDebugSwift"
 #      m.dependency 'KcDebugTool/SDK'
   end
   
+  # 基础库
   s.subspec 'sdk' do |sdk|
       sdk.source_files = 'KcDebugTool/Classes/sdk/**/*'
       sdk.frameworks = 'UIKit'
   end
   
+  # 用于hook
+  s.subspec 'model' do |m|
+      m.source_files = 'KcDebugTool/Classes/model/**/*'
+      m.frameworks = 'UIKit'
+      m.dependency 'KcDebugTool/sdk'
+#      m.dependency 'TrampolineHook'
+  end
+  
+  # 一些工具
   s.subspec 'other' do |ss|
       ss.source_files = 'KcDebugTool/Classes/other/**/*'
       ss.frameworks = 'UIKit'
@@ -60,23 +71,24 @@ TODO: Add long description of the pod here.
       ss.dependency "KcDebugSwift"
   end
   
-  s.subspec 'model' do |m|
-      m.source_files = 'KcDebugTool/Classes/model/**/*'
-      m.frameworks = 'UIKit'
-      m.dependency 'KcDebugTool/sdk'
-#      m.dependency 'TrampolineHook'
-  end
-  
-  s.subspec 'extension' do |e|
-      e.source_files = 'KcDebugTool/Classes/extension/**/*'
-      e.frameworks = 'UIKit'
-      e.dependency 'KcDebugTool/model'
+  s.subspec 'extension' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/extension/**/*'
+      ss.frameworks = 'UIKit'
+      ss.dependency 'KcDebugTool/model'
+      ss.dependency 'KcDebugTool/autoLayout'
 #      m.dependency 'TrampolineHook'
   end
   
   s.subspec 'MachO' do |ss|
       ss.source_files = 'KcDebugTool/Classes/MachO/**/*'
       ss.dependency 'KcDebugTool/extension'
+  end
+  
+  # 约束相关
+  s.subspec 'autoLayout' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/autoLayout/**/*'
+      ss.dependency 'KcDebugTool/model'
+      ss.dependency "KcDebugSwift"
   end
   
   # 全部依赖了
@@ -87,6 +99,7 @@ TODO: Add long description of the pod here.
       d.dependency 'KcDebugTool/other'
       d.dependency 'KcDebugTool/View'
       d.dependency 'KcDebugTool/MachO'
+      d.dependency 'KcDebugTool/autoLayout'
 #      m.dependency 'TrampolineHook'
   end
   

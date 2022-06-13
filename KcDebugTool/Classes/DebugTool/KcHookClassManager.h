@@ -19,6 +19,7 @@
 #import "SRBlockStrongReferenceCollector.h"
 #import "KcDetectLargerImageTool.h"
 #import "UIWindow+KcDebugTool.h"
+#import "KcAutoLayoutCheck.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

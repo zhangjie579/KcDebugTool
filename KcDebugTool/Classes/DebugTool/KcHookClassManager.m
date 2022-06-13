@@ -74,6 +74,11 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     [UITableView kc_hook_cellDidSelect];
     [UICollectionView kc_hook_cellDidSelect];
     
+    // 检查自动布局约束缺失
+//    [KcAutoLayoutCheck checkMixHorizontalMaxLayoutWithWhiteClass:[NSSet setWithArray:@[
+//        UILabel.class,
+//    ]] blackClasses:nil];
+    
     { // UIViewController dealloc 👻
         // 如果这个方法会crash, 可用下发的方法
         [UIViewController kc_hook_deallocWithBlock:^(KcHookAspectInfo * _Nonnull info) {
@@ -103,18 +108,15 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     // 第一响应者
 //    [UIView kc_hook_firstResponder];
     
+    // 最佳响应者
+    [UIWindow kc_hook_hitTest];
+    
     // 监听UIPresentationController
 //    [NSObject.kc_hookTool kc_hookWithObjc:UIPresentationController.class
 //                             selectorName:NSStringFromSelector(@selector(_setPresentingViewController:)) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 //        NSLog(@"aa -- %@", info.arguments.firstObject);
 //    }];
     
-//    [NSObject.kc_hookTool kc_hookWithObjc:UITableView.class
-//                             selectorName:NSStringFromSelector(@selector(setContentSize:))
-//                              withOptions:KcAspectTypeBefore
-//                               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-//        NSLog(@"aa -- 1, %@", info.arguments.firstObject);
-//    }];
 //    
 //    [NSObject.kc_hookTool kc_hookWithObjc:UITableView.class
 //                             selectorName:NSStringFromSelector(@selector(reloadData))

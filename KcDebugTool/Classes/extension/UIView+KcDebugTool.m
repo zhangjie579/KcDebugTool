@@ -9,6 +9,8 @@
 #import "UIView+KcDebugTool.h"
 //#import "NSObject+KcMethodExtension.h"
 #import "NSObject+KcRuntimeExtension.h"
+#import "KcAutoLayoutCheck.h"
+@import KcDebugSwift;
 
 @implementation UIView (KcDebugTool)
 
@@ -150,6 +152,32 @@
                usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [KcLogParamModel logWithKey:@"backgroundColor" format:@"%@, %@", info.instance, info.arguments.firstObject ?: @""];
     } error:nil];
+}
+
+#pragma mark - 布局相关
+
+/// log view层级下丢失lessThanOrEqual约束labels
+- (nullable NSString *)kc_log_missMaxHorizontalConstraintViewHierarchyForLabel {
+    return [self kc_log_missMaxHorizontalConstraintViewHierarchyWithClassType:UILabel.class];
+}
+
+/// log view层级下丢失lessThanOrEqual约束的classType类型的view
+- (nullable NSString *)kc_log_missMaxHorizontalConstraintViewHierarchyWithClassType:(Class)classType {
+    NSMutableArray<KcPropertyResult *> *_Nullable propertys = [KcAutoLayoutCheck missMaxConstraintViewHierarchyWithView:self forAxis:UILayoutConstraintAxisHorizontal classType:classType];
+    
+    if (!propertys || propertys.count <= 0) {
+        return nil;
+    }
+    
+    NSMutableString *string = [[NSMutableString alloc] init];
+    
+    for (KcPropertyResult *property in propertys) {
+        [string appendFormat:@"%@\n", property.debugLog];
+    }
+    
+    [KcLogParamModel logWithKey:@"constraint - 缺少lessThanOrEqual" format:@"%@", string];
+    
+    return string;
 }
 
 @end

@@ -51,8 +51,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// 一段时间的次数
 @property (nonatomic) NSInteger frequencyTime;
 
+/// 自定义log的输出函数
++ (void)setInfoLogImpWithBlock:(void(^_Nullable)(NSString *))block beforeLogBlock:(void(^_Nullable)(NSString *))beforeLogBlock;
+
 + (void)logWithString:(NSString *)string;
 + (void)logWithKey:(NSString *)key format:(NSString *)format, ...;
+
+/// 对象的描述
++ (NSString *)instanceDesc:(id)instance;
 
 - (void)defaultLogWithInfo:(KcHookAspectInfo *)info;
 

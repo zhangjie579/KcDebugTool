@@ -129,11 +129,17 @@
                 [obj.value isEqualToString:selectorNamePresent]) {
                 
                 // push、present, 监听from对象的销毁 (这样会导致后面push的页面销毁, 并且不走pop逻辑)
-                [tool kc_hookWithObjc:info.instance
-                         selectorName:@"dealloc"
-                          withOptions:KcAspectTypeBefore
-                           usingBlock:^(KcHookAspectInfo * _Nonnull subInfo) {
-                    [KcLogParamModel logWithKey:@"跳转 - from对象dealloc - ⚠️" format:@"%@", subInfo.instance];
+//                [tool kc_hookWithObjc:info.instance
+//                         selectorName:@"dealloc"
+//                          withOptions:KcAspectTypeBefore
+//                           usingBlock:^(KcHookAspectInfo * _Nonnull subInfo) {
+//                    [KcLogParamModel logWithKey:@"跳转 - from对象dealloc - ⚠️" format:@"%@", subInfo.instance];
+//                }];
+                
+                // 通过isa修改dealloc方法, 可能会导致Swift deinit方法不调用⚠️
+                Class cls = [info.instance class];
+                [info.instance kc_deallocObserverWithBlock:^{
+                    [KcLogParamModel logWithKey:@"跳转 - from对象dealloc - ⚠️" format:@"%@", cls];
                 }];
                 
                 toViewController = [UIViewController kc_topViewControllerWithBaseViewController:info.arguments.firstObject];

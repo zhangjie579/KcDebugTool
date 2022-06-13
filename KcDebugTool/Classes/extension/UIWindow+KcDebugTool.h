@@ -16,6 +16,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void)kc_hook_becomeKeyWindow;
 
+/// hitTest:withEvent:
++ (void)kc_hook_hitTest;
+
 @end
 
 NS_ASSUME_NONNULL_END

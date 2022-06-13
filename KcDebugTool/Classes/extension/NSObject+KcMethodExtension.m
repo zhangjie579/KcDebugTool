@@ -8,6 +8,7 @@
 
 #import "NSObject+KcMethodExtension.h"
 #import "UIView+KcDebugTool.h"
+@import KcDebugSwift;
 
 @implementation NSObject (KcMethodExtension)
 
@@ -196,13 +197,7 @@ _UIGestureRecognizerSendTargetActions
                              selector:@selector(addTarget:action:)
                           withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        id target = info.arguments.firstObject;
-        id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
-        
-        [self kc_hook_customClassWithTarget:target
-                                     action:action
-                                logIdentity:@"UIGestureRecognizer"
-                                      block:block];
+        [self __kc_hook_gestureRecognizerTargetActionWithInfo:info];
     } error:nil];
 }
 
@@ -218,14 +213,40 @@ _UIGestureRecognizerSendTargetActions
                              selector:@selector(initWithTarget:action:)
                           withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        id target = info.arguments.firstObject;
-        id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
-        
-        [self kc_hook_customClassWithTarget:target
-                                     action:action
-                                logIdentity:@"UIGestureRecognizer"
-                                      block:block];
+        [self __kc_hook_gestureRecognizerTargetActionWithInfo:info];
     } error:nil];
+}
+
+/// hook gesture的target action
++ (void)__kc_hook_gestureRecognizerTargetActionWithInfo:(KcHookAspectInfo *)info {
+    id target = info.arguments.firstObject;
+    id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
+    
+    __weak typeof(info.instance) weakInstance = info.instance;
+    [self kc_hook_customClassWithTarget:target
+                                 action:action
+                            logIdentity:@"UIGestureRecognizer"
+                                  block:^(KcHookAspectInfo *subInfo) {
+        __strong typeof(weakInstance) objc = weakInstance;
+        if ([objc isKindOfClass:[UIGestureRecognizer class]]) {
+            UIGestureRecognizer *gesture = (UIGestureRecognizer *)objc;
+            UIView *view = gesture.view;
+            
+            // 因为对于rx这种用于block保证的, 知道target/action也没用
+            KcPropertyResult *property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:view startSearchView:nil isLog:false];
+            if (property) {
+                NSString *desc = [NSString stringWithFormat:@"[%@, 响应事件对象: %@]", property.debugLog, [KcLogParamModel instanceDesc:view]];
+                
+                [KcLogParamModel logWithKey:@"UIGestureRecognizer"
+                                     format:@"target: %@, action: %@, %@", subInfo.className, subInfo.selectorName, desc];
+                
+                return;
+            }
+        }
+        
+        [KcLogParamModel logWithKey:@"UIGestureRecognizer"
+                             format:@"target: %@, action: %@", subInfo.className, subInfo.selectorName];
+    }];
 }
 
 /// hook UIGestureRecognizer enable
@@ -261,11 +282,11 @@ _UIGestureRecognizerSendTargetActions
                          selectorName:action
                           withOptions:KcAspectTypeAfter
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-        [KcLogParamModel logWithKey:logIdentity
-                             format:@"target: %@, action: %@", info.className, info.selectorName];
-
         if (block) {
             block(info);
+        } else {
+            [KcLogParamModel logWithKey:logIdentity
+                                 format:@"target: %@, action: %@", info.className, info.selectorName];
         }
     }];
 }
@@ -329,14 +350,24 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
 + (void)kc_handleLogSendActionWithInfo:(KcHookAspectInfo *)info {
     id action = info.arguments.firstObject;
     id target = info.arguments.count >= 2 ? info.arguments[1] : nil;
+    id instance = info.instance;
+    
+    // 那个对象的event
+    NSString *instanceDesc = @"";
+    if ([instance isKindOfClass:[UIView class]]) {
+        KcPropertyResult *result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:instance startSearchView:nil isLog:false];
+        if (result) {
+            instanceDesc = [NSString stringWithFormat:@", [%@, 响应事件对象: %@]", result.debugLog, [KcLogParamModel instanceDesc:instance]];
+        }
+    }
     
     NSString *className = [KcLogParamModel demangleNameWithName:NSStringFromClass([target class])];
     
     // 如果target非自定义class, 不log target
     if ([NSObject kc_isCustomClass:[target class]]) {
-        [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, class: %@, target: %@", action, className, target];
+        [KcLogParamModel logWithKey:@"sendAction" format:@"class: %@, action: %@, target: %@ %@", className, action, [KcLogParamModel instanceDesc:target], instanceDesc];
     } else {
-        [KcLogParamModel logWithKey:@"sendAction" format:@"action: %@, class: %@", action, className];
+        [KcLogParamModel logWithKey:@"sendAction" format:@"class: %@, action: %@ %@", className, action, instanceDesc];
     }
 }
 

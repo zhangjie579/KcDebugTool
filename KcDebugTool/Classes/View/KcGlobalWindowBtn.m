@@ -26,7 +26,7 @@
 /// 添加权限管理入口
 - (void)start {
     CGSize screenSize = UIScreen.mainScreen.bounds.size;
-    CGRect rect = CGRectMake(screenSize.width - 120, screenSize.height - 120, 80, 80);
+    CGRect rect = CGRectMake(screenSize.width - 40, screenSize.height - 200, 30, 30);
     
     UIWindow *keyWindow = self.keyWindow;
     if (keyWindow) {
@@ -59,7 +59,7 @@
 //        NSLog(@"没找到topViewController");
 //        return;
 //    }
-    
+    [NSNotificationCenter.defaultCenter postNotificationName:@"kc_test_debug_btn_click" object:nil];
 }
 
 - (nullable UIWindow *)keyWindow {
@@ -94,8 +94,8 @@
 - (KcFloatingWindow *)window {
     if (!_window) {
         CGSize screenSize = UIScreen.mainScreen.bounds.size;
-        _window = [[KcFloatingWindow alloc] initWithFrame:CGRectMake(screenSize.width - 120, screenSize.height - 120, 80, 80)];
-        _window.layer.cornerRadius = 40;
+        _window = [[KcFloatingWindow alloc] initWithFrame:CGRectMake(screenSize.width - 120, screenSize.height - 120, 30, 30)];
+        _window.layer.cornerRadius = 15;
         _window.clipsToBounds = YES;
         _window.alpha = 0.5;
     }
@@ -106,11 +106,11 @@
     if (!_btn) {
         _btn = [[UIButton alloc] init];
         _btn.backgroundColor = UIColor.orangeColor;
-        [_btn setTitle:@"debugTool" forState:UIControlStateNormal];
+        [_btn setTitle:@"🏹" forState:UIControlStateNormal];
         _btn.titleLabel.textColor = UIColor.redColor;
         _btn.titleLabel.font = [UIFont systemFontOfSize:16];
         [_btn addTarget:self action:@selector(btnClick) forControlEvents:UIControlEventTouchUpInside];
-        _btn.layer.cornerRadius = 40;
+        _btn.layer.cornerRadius = 15;
         _btn.clipsToBounds = true;
     }
     return _btn;

@@ -36,9 +36,73 @@
     // 如果为swift的class, 因为kc_aspect_hookSelector是NSObject的扩展, swift class没有这个方法, 调用会crash
     // swift class 转NSObject, 成功了⚠️
     NSObject *_Nullable cocoaObjc = (NSObject *)objc;
+    
+//    id hookObjc = objc;
     if (!cocoaObjc
         || ![cocoaObjc respondsToSelector:@selector(kc_aspect_hookSelector:withOptions:usingBlock:error:)]) {
+        // 第1种: 想通过runtime来兼容Swift的运行时, 再最后消息转发时, 方法找不到了
+        // 第2种: 修改class的super class。class_setSuperclass
+        // 第3种: 动态创建个class, 把isa中的runtime方法全部copy过来
+        [KcLogParamModel logWithKey:@"hook失败⚠️" format:@"objc: %@, selector: %@", objc, NSStringFromSelector(selector)];
         return;
+        
+//        if (!object_isClass(objc)) {
+//            Class superClass = class_getSuperclass([objc class]);
+//            if ([NSStringFromClass(superClass) containsString:@"SwiftObject"]) {
+////                class_setSuperclass(object_getClass(objc), [NSObject class]);
+//
+//                NSString *aspectClassName = [NSString stringWithFormat:@"%@_kcAscpet", NSStringFromClass([objc class])];
+//                Class aspectClass = objc_allocateClassPair([NSObject class], aspectClassName.UTF8String, 0);
+//
+//                unsigned int count;
+//                Method *methodList = class_copyMethodList([objc class], &count);
+//                for (int i = 0; i < count; i++) {
+//                    Method method = methodList[i];
+//                    class_addMethod(aspectClass, method_getName(method), method_getImplementation(method), method_getTypeEncoding(method));
+//                }
+//                free(methodList);
+//                methodList = nil;
+//
+//                objc_registerClassPair(aspectClass);
+//
+//                object_setClass(objc, aspectClass);
+//            }
+//        }
+        
+//        Class cls = object_getClass(object_getClass(objc));
+//        if (object_isClass(objc)) {
+//            cls = object_getClass(objc);
+//        }
+//
+//        Method method = class_getClassMethod([NSObject class], @selector(kc_aspect_hookSelector:withOptions:usingBlock:error:));
+//
+//        class_addMethod(cls, @selector(kc_aspect_hookSelector:withOptions:usingBlock:error:), method_getImplementation(method),  method_getTypeEncoding(method));
+//
+//        if (!cocoaObjc
+//            || ![[cocoaObjc class] respondsToSelector:@selector(kc_aspect_hookSelector:withOptions:usingBlock:error:)]) {
+//            [KcLogParamModel logWithKey:@"hook失败⚠️" format:@"objc: %@, selector: %@", objc, NSStringFromSelector(selector)];
+//            return;
+//        }
+//
+//        // 因为内部会用class作为dict的key, 需要遵守NSCopying
+//        if (![cocoaObjc conformsToProtocol:@protocol(NSCopying)]) {
+//            BOOL success = class_addProtocol([cocoaObjc class], @protocol(NSCopying));
+//
+//            class_addMethod(object_getClass([cocoaObjc class]), @selector(copyWithZone:), default_copyWithZone, "@@:@");
+//            class_addMethod(object_getClass(NSClassFromString(@"Swift._SwiftObject")), @selector(copyWithZone:), default_copyWithZone, "@@:@");
+//            if (!success) {
+//                return;
+//            }
+//        }
+//
+//        if (![[cocoaObjc class] respondsToSelector:@selector(instanceMethodSignatureForSelector:)]) {
+//            BOOL success = class_addMethod(object_getClass([cocoaObjc class]), @selector(instanceMethodSignatureForSelector:), default_instanceMethodSignatureForSelector, "@@::");
+//            if (!success) {
+//                return;
+//            }
+//        }
+//
+//        hookObjc = [cocoaObjc class];
     }
     
     [objc kc_aspect_hookSelector:selector withOptions:(KcAspectOptions)options usingBlock:^(id<KcAspectInfo> info) {
@@ -53,6 +117,18 @@
         }
     } error:error];
 }
+
+//static id default_copyWithZone(id objc, SEL sel, NSZone *zone) {
+//    return objc;
+//}
+//
+//static NSMethodSignature *default_instanceMethodSignatureForSelector(Class cls, SEL sel, SEL aSelector) {
+//    Method method = class_getInstanceMethod(cls, aSelector);
+//    if (!method) {
+//        return nil;
+//    }
+//    return [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(method)];
+//}
 
 @end
 

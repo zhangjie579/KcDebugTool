@@ -40,6 +40,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// 背景色
 + (void)kc_hook_backgroundColor;
 
+#pragma mark - 约束相关
+
+/// log view层级下丢失lessThanOrEqual约束labels
+- (nullable NSString *)kc_log_missMaxHorizontalConstraintViewHierarchyForLabel;
+
+/// log view层级下丢失lessThanOrEqual约束的classType类型的view
+- (nullable NSString *)kc_log_missMaxHorizontalConstraintViewHierarchyWithClassType:(Class)classType;
+
 @end
 
 NS_ASSUME_NONNULL_END

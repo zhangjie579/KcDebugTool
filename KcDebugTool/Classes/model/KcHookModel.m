@@ -73,6 +73,15 @@
 
 @implementation KcLogParamModel
 
+static void(^kc_gInfoLogBlock)(NSString *);
+static void(^kc_gInfoLogBeforeBlock)(NSString *);
+
+/// 自定义log的输出函数
++ (void)setInfoLogImpWithBlock:(void(^_Nullable)(NSString *))block beforeLogBlock:(void(^_Nullable)(NSString *))beforeLogBlock {
+    kc_gInfoLogBlock = block;
+    kc_gInfoLogBeforeBlock = beforeLogBlock;
+}
+
 + (void)logWithString:(NSString *)string {
     NSLog(@"kc --- %@", string);
 }
@@ -87,7 +96,25 @@
     }
     va_end(arglist);
     
-    NSLog(@"kc --- [%@] %@", key, msg);
+    
+    NSString *log = [NSString stringWithFormat:@"kc --- [%@] %@", key, msg];
+    
+    if (kc_gInfoLogBeforeBlock) {
+        kc_gInfoLogBeforeBlock(log);
+    }
+    
+    if (!kc_gInfoLogBlock) {
+        NSLog(@"%@", log);
+    } else {
+        kc_gInfoLogBlock(log);
+    }
+    
+//    NSLog(@"kc --- [%@] %@", key, msg);
+}
+
+/// 对象的描述
++ (NSString *)instanceDesc:(id)instance {
+    return [NSString stringWithFormat:@"<%@: %p>", [instance class], instance];
 }
 
 - (void)defaultLogWithInfo:(KcHookAspectInfo *)info {
