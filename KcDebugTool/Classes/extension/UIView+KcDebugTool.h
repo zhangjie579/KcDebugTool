@@ -9,6 +9,7 @@
 #import <UIKit/UIKit.h>
 #import "KcHookTool.h"
 #import "KcHookModel.h"
+@class KcPropertyResult;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -47,6 +48,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// log view层级下丢失lessThanOrEqual约束的classType类型的view
 - (nullable NSString *)kc_log_missMaxHorizontalConstraintViewHierarchyWithClassType:(Class)classType;
+
+#pragma mark - 属性
+
+/// 查找属性信息
+- (nullable KcPropertyResult *)propertyInfoWithIsLog:(BOOL)isLog;
 
 @end
 

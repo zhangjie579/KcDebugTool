@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'KcDebugTool'
-  s.version          = '0.1.1'
+  s.version          = '0.1.2'
   s.summary          = 'A short description of KcDebugTool.'
 
 # This description is used to generate tags and improve search results.
@@ -44,7 +44,7 @@ TODO: Add long description of the pod here.
   s.subspec 'View' do |v|
       v.source_files = 'KcDebugTool/Classes/View/**/*'
       v.frameworks = 'UIKit'
-      v.dependency "KcDebugSwift"
+      v.dependency "KcDebugSwift/FindProperty"
 #      m.dependency 'KcDebugTool/SDK'
   end
   
@@ -68,7 +68,7 @@ TODO: Add long description of the pod here.
       ss.frameworks = 'UIKit'
       ss.dependency 'KcDebugTool/sdk'
       ss.dependency 'KcDebugTool/model'
-      ss.dependency "KcDebugSwift"
+      ss.dependency "KcDebugSwift/FindProperty"
   end
   
   s.subspec 'extension' do |ss|
@@ -88,7 +88,7 @@ TODO: Add long description of the pod here.
   s.subspec 'autoLayout' do |ss|
       ss.source_files = 'KcDebugTool/Classes/autoLayout/**/*'
       ss.dependency 'KcDebugTool/model'
-      ss.dependency "KcDebugSwift"
+      ss.dependency "KcDebugSwift/FindProperty"
   end
   
   # 全部依赖了

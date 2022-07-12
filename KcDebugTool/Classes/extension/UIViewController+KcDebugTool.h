@@ -46,6 +46,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// 导航栏
 @interface UIViewController (KcDebugNavigation)
 
++ (void)kc_hook_navigationController;
+
 /// 导航栏item
 + (void)kc_hookNavigationBarButtonItem;
 

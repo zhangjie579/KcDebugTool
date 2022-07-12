@@ -8,6 +8,7 @@
 #import "KcAutoLayoutCheck.h"
 #import "KcHookTool.h"
 #import "KcHookModel.h"
+#import <objc/message.h>
 @import KcDebugSwift;
 
 @interface KcAutoLayoutCheck ()

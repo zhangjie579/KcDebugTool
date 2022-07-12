@@ -31,15 +31,15 @@
 - (UIView *)_kc_private_test_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *_Nullable view = [self _kc_private_test_hitTest:point withEvent:event];
     
-    NSString *description = @"";
-    if (view) {
-        KcPropertyResult *_Nullable property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:view startSearchView:nil isLog:false];
-        if (property) {
-            description = [NSString stringWithFormat:@"%@, 响应者: %@", property.debugLog, [KcLogParamModel instanceDesc:view]];
-        } else {
-            description = [KcLogParamModel instanceDesc:view];
-        }
-    }
+    NSString *description = [KcLogParamModel instanceDesc:view];
+//    if (view && ![NSStringFromClass([view class]) hasPrefix:@"_"]) {
+//        KcPropertyResult *property = property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:view startSearchView:nil isLog:false];
+//        if (property) {
+//            description = [NSString stringWithFormat:@"%@, 响应者: %@", property.debugLog, [KcLogParamModel instanceDesc:view]];
+//        } else {
+//            description = [KcLogParamModel instanceDesc:view];
+//        }
+//    }
     
     [KcLogParamModel logWithKey:@"最佳响应者" format:@"%@", description ?: @""];
     

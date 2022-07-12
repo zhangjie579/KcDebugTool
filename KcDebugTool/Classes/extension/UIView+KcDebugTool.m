@@ -180,4 +180,14 @@
     return string;
 }
 
+/// 查找属性信息
+- (nullable KcPropertyResult *)propertyInfoWithIsLog:(BOOL)isLog {
+    if (@available(iOS 13.0, *)) {
+        KcPropertyResult *result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:self startSearchView:nil isLog:isLog];
+        return result;
+    } else {
+        return nil;
+    }
+}
+
 @end

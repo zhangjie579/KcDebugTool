@@ -71,7 +71,9 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     }];
     
     // 最佳响应者
-    [UIWindow kc_hook_hitTest];
+//    [UIWindow kc_hook_hitTest];
+    
+//    [UIViewController kc_hook_navigationController];
     
     // cell相关 👻
     [UITableView kc_hook_cellDidSelect];

@@ -241,6 +241,21 @@
 
 @implementation UIViewController (KcDebugNavigation)
 
++ (void)kc_hook_navigationController {
+    [UIViewController kc_hookSelectorName:NSStringFromSelector(@selector(navigationController))
+              swizzleSelectorName:NSStringFromSelector(@selector(__kc_hook_navigationController))];
+}
+
+- (UINavigationController *)__kc_hook_navigationController {
+    UINavigationController *_Nullable navigationController = [self __kc_hook_navigationController];
+    
+    if (!navigationController) {
+        [KcLogParamModel logWithKey:@"导航栏" format:@"❎❎❎获取导航栏失败 vc: %@", self];
+    }
+    
+    return navigationController;
+}
+
 /// 导航栏item
 + (void)kc_hookNavigationBarButtonItem {
     // left item

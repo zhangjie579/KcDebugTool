@@ -24,7 +24,7 @@
     
     id<KcAspectable> manager = KcHookTool.manager;
     [instanceMethods enumerateObjectsUsingBlock:^(NSString * _Nonnull selectorName, NSUInteger idx, BOOL * _Nonnull stop) {
-        [manager kc_hookWithObjc:objc selector:NSSelectorFromString(selectorName) withOptions:KcAspectTypeAfter usingBlock:^(KcHookAspectInfo * _Nonnull hookInfo) {
+        [manager kc_hookWithObjc:objc selector:NSSelectorFromString(selectorName) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull hookInfo) {
             [info.logModel defaultLogWithInfo:hookInfo];
             if (block) {
                 block(hookInfo);
@@ -94,7 +94,7 @@
 + (void)kc_hook_sendActionForEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIControl class]
                              selector:@selector(sendAction:to:forEvent:)
-                          withOptions:KcAspectTypeAfter
+                          withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [self kc_handleLogSendActionWithInfo:info];
         if (block) {
@@ -107,7 +107,7 @@
 + (void)kc_hook_UIApplicationSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIApplication class]
                              selector:@selector(sendAction:to:from:forEvent:)
-                          withOptions:KcAspectTypeAfter
+                          withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [self kc_handleLogSendActionWithInfo:info];
         if (block) {
@@ -121,7 +121,7 @@
 + (void)kc_hook_UIApplicationSendEventWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:[UIApplication class]
                              selector:@selector(sendEvent:)
-                          withOptions:KcAspectTypeAfter
+                          withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         [self kc_handleLogSendActionWithInfo:info];
         if (block) {
@@ -164,7 +164,7 @@ _UIGestureRecognizerSendTargetActions
 + (void)kc_hook_gestureRecognizerSendActionWithBlock:(void(^)(KcHookAspectInfo *info))block {
     [self.kc_hookTool kc_hookWithObjc:NSClassFromString(@"UIGestureRecognizerTarget")
                              selector:NSSelectorFromString(@"_sendActionWithGestureRecognizer:")
-                          withOptions:KcAspectTypeAfter
+                          withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 //        id instance = info.instance; // (action=switchToDefaultKeyBoard, target=<KcTestView 0x7ffc6540f710>)
         id target = info.arguments.firstObject; // <UITapGestureRecognizer: 0x7ffc6540fa00; state = Ended; view = <UILabel 0x7ffc65406ed0>; target= <(action=switchToDefaultKeyBoard, target=<KcTestView 0x7ffc6540f710>)>>
@@ -222,27 +222,29 @@ _UIGestureRecognizerSendTargetActions
     id target = info.arguments.firstObject;
     id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
     
-    __weak typeof(info.instance) weakInstance = info.instance;
+//    __weak typeof(info.instance) weakInstance = info.instance;
     [self kc_hook_customClassWithTarget:target
                                  action:action
                             logIdentity:@"UIGestureRecognizer"
                                   block:^(KcHookAspectInfo *subInfo) {
-        __strong typeof(weakInstance) objc = weakInstance;
-        if ([objc isKindOfClass:[UIGestureRecognizer class]]) {
-            UIGestureRecognizer *gesture = (UIGestureRecognizer *)objc;
-            UIView *view = gesture.view;
-            
-            // 因为对于rx这种用于block保证的, 知道target/action也没用
-            KcPropertyResult *property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:view startSearchView:nil isLog:false];
-            if (property) {
-                NSString *desc = [NSString stringWithFormat:@"[%@, 响应事件对象: %@]", property.debugLog, [KcLogParamModel instanceDesc:view]];
-                
-                [KcLogParamModel logWithKey:@"UIGestureRecognizer"
-                                     format:@"target: %@, action: %@, %@", subInfo.className, subInfo.selectorName, desc];
-                
-                return;
-            }
-        }
+//        __strong typeof(weakInstance) objc = weakInstance;
+//        if ([objc isKindOfClass:[UIGestureRecognizer class]]) {
+//            UIGestureRecognizer *gesture = (UIGestureRecognizer *)objc;
+//            UIView *view = gesture.view;
+//
+//            // 因为对于rx这种用于block保证的, 知道target/action也没用
+//            if (@available(iOS 13.0, *)) {
+//                KcPropertyResult *property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:view startSearchView:nil isLog:false];
+//                if (property) {
+//                    NSString *desc = [NSString stringWithFormat:@"[%@, 响应事件对象: %@]", property.debugLog, [KcLogParamModel instanceDesc:view]];
+//
+//                    [KcLogParamModel logWithKey:@"UIGestureRecognizer"
+//                                         format:@"target: %@, action: %@, %@", subInfo.className, subInfo.selectorName, desc];
+//
+//                    return;
+//                }
+//            }
+//        }
         
         [KcLogParamModel logWithKey:@"UIGestureRecognizer"
                              format:@"target: %@, action: %@", subInfo.className, subInfo.selectorName];
@@ -280,7 +282,7 @@ _UIGestureRecognizerSendTargetActions
     // 比如: 如果是通过Rx的方式添加的gesture处理, 对应的target、action是rx通用的, 不是想要的, 只能通过堆栈来查看⚠️
     [self.kc_hookTool kc_hookWithObjc:target
                          selectorName:action
-                          withOptions:KcAspectTypeAfter
+                          withOptions:KcAspectTypeBefore
                            usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         if (block) {
             block(info);
@@ -350,16 +352,18 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
 + (void)kc_handleLogSendActionWithInfo:(KcHookAspectInfo *)info {
     id action = info.arguments.firstObject;
     id target = info.arguments.count >= 2 ? info.arguments[1] : nil;
-    id instance = info.instance;
+//    id instance = info.instance;
     
     // 那个对象的event
     NSString *instanceDesc = @"";
-    if ([instance isKindOfClass:[UIView class]]) {
-        KcPropertyResult *result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:instance startSearchView:nil isLog:false];
-        if (result) {
-            instanceDesc = [NSString stringWithFormat:@", [%@, 响应事件对象: %@]", result.debugLog, [KcLogParamModel instanceDesc:instance]];
-        }
-    }
+//    if (@available(iOS 13.0, *)) {
+//        if ([instance isKindOfClass:[UIView class]]) {
+//            KcPropertyResult *result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:instance startSearchView:nil isLog:false];
+//            if (result) {
+//                instanceDesc = [NSString stringWithFormat:@", [%@, 响应事件对象: %@]", result.debugLog, [KcLogParamModel instanceDesc:instance]];
+//            }
+//        }
+//    }
     
     NSString *className = [KcLogParamModel demangleNameWithName:NSStringFromClass([target class])];
     
