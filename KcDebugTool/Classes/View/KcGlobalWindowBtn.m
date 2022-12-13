@@ -94,8 +94,8 @@
 - (KcFloatingWindow *)window {
     if (!_window) {
         CGSize screenSize = UIScreen.mainScreen.bounds.size;
-        _window = [[KcFloatingWindow alloc] initWithFrame:CGRectMake(screenSize.width - 120, screenSize.height - 120, 30, 30)];
-        _window.layer.cornerRadius = 15;
+        _window = [[KcFloatingWindow alloc] initWithFrame:CGRectMake(screenSize.width - 120, screenSize.height - 120, 40, 40)];
+        _window.layer.cornerRadius = 20;
         _window.clipsToBounds = YES;
         _window.alpha = 0.5;
     }
