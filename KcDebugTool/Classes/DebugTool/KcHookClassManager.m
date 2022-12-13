@@ -10,6 +10,17 @@
 #import "NSObject+KcMethodExtension.h"
 #import "KcHookProjectProtocol.h"
 #import <dlfcn.h>
+#import "KcAspects.h"
+
+#import <mach-o/getsect.h>
+#import <mach-o/ldsyms.h>
+#import <sys/types.h>
+#import <mach-o/dyld.h>
+#import <mach-o/loader.h>
+#import <mach-o/nlist.h>
+
+#import "KcAllocBigMemoryMonitor.h"
+#import "SMCallStack.h"
 
 @implementation KcHookClassManager
 

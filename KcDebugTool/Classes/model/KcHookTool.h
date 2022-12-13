@@ -8,6 +8,7 @@
 
 #import <Foundation/Foundation.h>
 @class KcHookAspectInfo;
+@protocol KcAspectInfo;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -36,7 +37,8 @@ typedef NS_OPTIONS(NSUInteger, KcAspectType) {
 @property (nonatomic, copy) NSString *selectorName;
 
 @property (nonatomic, nullable) NSArray *arguments;
-@property (nonatomic, nullable) id aspectInfo;
+/// 需要获取duration的话, 需要after方式的hook
+@property (nonatomic, nullable) id<KcAspectInfo> aspectInfo;
 
 - (nullable NSString *)className;
 

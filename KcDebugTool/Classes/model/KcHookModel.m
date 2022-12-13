@@ -117,6 +117,12 @@ static void(^kc_gInfoLogBeforeBlock)(NSString *);
     return [NSString stringWithFormat:@"<%@: %p>", [instance class], instance];
 }
 
+/// Swift对象描述
++ (NSString *)swiftInstanceDesc:(id)instance {
+    NSString *className = [self demangleNameWithName:NSStringFromClass([instance class])];
+    return [NSString stringWithFormat:@"<%@: %p>", className, instance];
+}
+
 - (void)defaultLogWithInfo:(KcHookAspectInfo *)info {
     
     NSString *(^methodDescriptionLog)(void) = ^NSString * {

@@ -59,6 +59,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// 对象的描述
 + (NSString *)instanceDesc:(id)instance;
+/// Swift对象描述
++ (NSString *)swiftInstanceDesc:(id)instance;
 
 - (void)defaultLogWithInfo:(KcHookAspectInfo *)info;
 
