@@ -18,7 +18,15 @@ typedef NS_ENUM(NSUInteger, SMCallStackType) {
 
 @interface SMCallStack : NSObject
 
+/// 线程调用堆栈, isRunning = false
 + (NSString *)callStackWithType:(SMCallStackType)type;
+
+/// 线程调用堆栈
+/// - Parameters:
+///   - type: 类型
+///   - isRunning: 是否要CPU运行中的线程, CPU使用率 > 0表示在运行
+///   - isFilterCurrentThread: 是否过滤当前线程
++ (NSString *)callStackWithType:(SMCallStackType)type isRunning:(BOOL)isRunning isFilterCurrentThread:(BOOL)isFilterCurrentThread;
 
 extern NSString *smStackOfThread(thread_t thread);
 

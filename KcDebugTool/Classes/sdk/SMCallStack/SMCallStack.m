@@ -7,6 +7,20 @@
 
 #import "SMCallStack.h"
 
+/// 线程的信息
+@interface ThreadInfoObjc : NSObject
+
+@property (nonatomic) double cpuUsage;
+
+@property (nonatomic) integer_t userTime;
+
+//@property (nonatomic) thread_t thread;
+
+/// 描述
+@property (nonatomic, copy) NSString *desc;
+
+@end
+
 //为通用回溯设计结构支持栈地址由小到大，地址里存储上个栈指针的地址
 // 1.声明一个结构体，用来存储链式的栈指针信息 (sp + fp)
 typedef struct SMStackFrame {
@@ -28,7 +42,18 @@ static mach_port_t _smMainThreadId;
 }
 
 #pragma mark - Interface
+
+/// 线程调用堆栈, isRunning = false, isFilterCurrentThread = false
 + (NSString *)callStackWithType:(SMCallStackType)type {
+    return [self callStackWithType:type isRunning:false isFilterCurrentThread:false];
+}
+
+/// 线程调用堆栈
+/// - Parameters:
+///   - type: 类型
+///   - isRunning: 是否要CPU运行中的线程, CPU使用率 > 0表示在运行
+///   - isFilterCurrentThread: 是否过滤当前线程
++ (NSString *)callStackWithType:(SMCallStackType)type isRunning:(BOOL)isRunning isFilterCurrentThread:(BOOL)isFilterCurrentThread {
     if (type == SMCallStackTypeAll) {
         thread_act_array_t threads; //int 组成的数组比如 thread[1] = 5635
         mach_msg_type_number_t thread_count = 0; //mach_msg_type_number_t 是 int 类型
@@ -38,10 +63,46 @@ static mach_port_t _smMainThreadId;
         if (kr != KERN_SUCCESS) {
             return @"fail get all threads";
         }
+        thread_info_data_t current_info;
+        mach_msg_type_number_t inOutSize;
+        thread_t currentThread = mach_thread_self();
+        kr = thread_info((thread_t)currentThread, THREAD_IDENTIFIER_INFO, current_info, &inOutSize);
+        uint64_t current_thread_id = 0;
+        if (kr == KERN_SUCCESS) {
+            thread_identifier_info_t idInfo = (thread_identifier_info_t)current_info;
+            // https://juejin.cn/post/7036299565565214728
+//            current_queue_name = [MrcUtil threadNameWithThreadInfo:idInfo];
+//            dispatch_queue_t* dispatch_queue_ptr = (dispatch_queue_t*)idInfo->dispatch_qaddr;
+//            dispatch_queue_t dispatch_queue = *dispatch_queue_ptr;
+//            const char* queue_name = dispatch_queue_get_label(dispatch_queue);
+            current_thread_id = idInfo->thread_id;
+        }
+        
         NSMutableString *reStr = [NSMutableString stringWithFormat:@"Call %u threads:\n", thread_count];
         for (int i = 0; i < thread_count; i++) {
             //当前执行的指令
-            [reStr appendString:smStackOfThread(threads[i])];
+            thread_t thread = threads[i];
+            thread_info_data_t threadInfo;
+            mach_msg_type_number_t inSize;
+            
+            // 过滤当前线程
+            if (isFilterCurrentThread && thread == mach_thread_self()) {
+                continue;
+            }
+            
+            if (thread_info((thread_t)thread, THREAD_IDENTIFIER_INFO, threadInfo, &inSize) == KERN_SUCCESS) {
+                uint64_t thread_id = ((thread_identifier_info_t)threadInfo)->thread_id;
+                if (isFilterCurrentThread && current_thread_id != 0 && thread_id == current_thread_id) {
+                    continue;
+                }
+                
+            }
+            
+            thread_identifier_info_t testInfo = (thread_identifier_info_t)threadInfo;            
+            ThreadInfoObjc *info = smStackOfThreadInfo(thread);
+            if (!isRunning || (isRunning && info.cpuUsage > 0)) {
+                [reStr appendString:info.desc];
+            }
         }
         //task info
         NSString *memStr = @"";
@@ -57,9 +118,12 @@ static mach_port_t _smMainThreadId;
         return [reStr copy];
     } else if (type == SMCallStackTypeMain) {
         //主线程
-        NSString *reStr = smStackOfThread((thread_t)_smMainThreadId);
+        NSString *reStr = @"";
+        ThreadInfoObjc *info = smStackOfThreadInfo((thread_t)_smMainThreadId);
+        if (!isRunning || (isRunning && info.cpuUsage > 0)) {
+            reStr = info.desc;
+        }
         assert(vm_deallocate(mach_task_self(), (vm_address_t)_smMainThreadId, 1 * sizeof(thread_t)) == KERN_SUCCESS);
-        NSLog(@"%@",reStr);
         return [reStr copy];
     } else {
         //当前线程
@@ -83,24 +147,37 @@ static mach_port_t _smMainThreadId;
                 pthread_getname_np(pt, name, sizeof name);
                 if (!strcmp(name, [nsthread name].UTF8String)) {
                     [nsthread setName:originName];
-                    reStr = smStackOfThread(list[i]);
+                    ThreadInfoObjc *info = smStackOfThreadInfo(list[i]);
+                    if (!isRunning || (isRunning && info.cpuUsage > 0)) {
+                        reStr = info.desc;
+                    } else {
+                        reStr = @"";
+                    }
                     assert(vm_deallocate(mach_task_self(), (vm_address_t)list[i], 1 * sizeof(thread_t)) == KERN_SUCCESS);
-                    NSLog(@"%@",reStr);
                     return [reStr copy];
                 }
             }
         }
         [nsthread setName:originName];
-        reStr = smStackOfThread(mach_thread_self());
-        NSLog(@"%@",reStr);
+        ThreadInfoObjc *info = smStackOfThreadInfo(mach_thread_self());
+        if (!isRunning || (isRunning && info.cpuUsage > 0)) {
+            reStr = info.desc;
+        } else {
+            reStr = @"";
+        }
         return [reStr copy];
     }
     return @"";
 }
 
 #pragma mark - get stack of mach_thread
-//当前栈帧结构
+
 NSString *smStackOfThread(thread_t thread) {
+    return smStackOfThreadInfo(thread).desc;
+}
+
+//当前栈帧结构
+ThreadInfoObjc *smStackOfThreadInfo(thread_t thread) {
     //thread info
     SMThreadInfoStruct threadInfoSt = {0};
     thread_info_data_t threadInfo;
@@ -117,7 +194,16 @@ NSString *smStackOfThread(thread_t thread) {
     
     uintptr_t buffer[100];
     int i = 0;
+    /*
+     Stack of thread: 45859:
+     CPU used: 0.0 percent
+     user time: 0 second
+     */
     NSMutableString *reStr = [NSMutableString stringWithFormat:@"Stack of thread: %u:\nCPU used: %.1f percent\nuser time: %d second\n", thread, threadInfoSt.cpuUsage, threadInfoSt.userTime];
+    
+    ThreadInfoObjc *infoObjc = [[ThreadInfoObjc alloc] init];
+    infoObjc.cpuUsage = threadInfoSt.cpuUsage;
+    infoObjc.userTime = threadInfoSt.userTime;
     
     //回溯栈的算法
     /*
@@ -131,7 +217,8 @@ NSString *smStackOfThread(thread_t thread) {
     mach_msg_type_number_t state_count = smThreadStateCountByCPU();
     kern_return_t kr = thread_get_state(thread, smThreadStateByCPU(), (thread_state_t)&machineContext.__ss, &state_count);
     if (kr != KERN_SUCCESS) {
-        return [NSString stringWithFormat:@"Fail get thread: %u", thread];
+        infoObjc.desc = [NSString stringWithFormat:@"Fail get thread: %u", thread];
+        return infoObjc;
     }
     //通过指令指针来获取当前指令地址
     const uintptr_t instructionAddress = smMachInstructionPointerByCPU(&machineContext);
@@ -146,14 +233,16 @@ NSString *smStackOfThread(thread_t thread) {
     }
     
     if (instructionAddress == 0) {
-        return @"Fail to get instruction address";
+        infoObjc.desc = @"Fail to get instruction address";
+        return infoObjc;
     }
     
     SMStackFrame stackFrame = {0};
     //通过栈基址指针获取当前栈帧地址
     const uintptr_t framePointer = smMachStackBasePointerByCPU(&machineContext);
     if (framePointer == 0 || smMemCopySafely((void *)framePointer, &stackFrame, sizeof(stackFrame)) != KERN_SUCCESS) {
-        return @"Fail frame pointer";
+        infoObjc.desc = @"Fail frame pointer";
+        return infoObjc;
     }
     for (; i < 32; i++) {
         buffer[i] = stackFrame.return_address; // 把当前的地址保存
@@ -174,7 +263,10 @@ NSString *smStackOfThread(thread_t thread) {
         [reStr appendFormat:@"%@", smOutputLog(i, buffer[i], &symbolicated[i])];
     }
     [reStr appendFormat:@"\n"];
-    return reStr;
+    
+    infoObjc.desc = reStr;
+    
+    return infoObjc;
 }
 
 #pragma mark - buildStack
@@ -432,7 +524,7 @@ uintptr_t smInstructionAddressByCPU(const uintptr_t address) {
 #endif
     return reAddress - 1;
 }
-mach_msg_type_number_t smThreadStateCountByCPU() {
+mach_msg_type_number_t smThreadStateCountByCPU(void) {
 #if defined(__arm64__)
     return ARM_THREAD_STATE64_COUNT;
 #elif defined(__arm__)
@@ -465,7 +557,7 @@ mach_msg_type_number_t smThreadStateCountByCPU() {
  #define x86_AVX_STATE64         17
  #define x86_AVX_STATE           18
 */
-thread_state_flavor_t smThreadStateByCPU() {
+thread_state_flavor_t smThreadStateByCPU(void) {
 #if defined(__arm64__)
     return ARM_THREAD_STATE64;
 #elif defined(__arm__)
@@ -486,5 +578,9 @@ uintptr_t smMachThreadGetLinkRegisterPointerByCPU(mcontext_t const machineContex
 #endif
 }
 
+
+@end
+
+@implementation ThreadInfoObjc
 
 @end

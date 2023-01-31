@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'KcDebugTool'
-  s.version          = '0.1.2'
+  s.version          = '0.1.3'
   s.summary          = 'A short description of KcDebugTool.'
 
 # This description is used to generate tags and improve search results.
@@ -49,9 +49,9 @@ TODO: Add long description of the pod here.
   end
   
   # 基础库
-  s.subspec 'sdk' do |sdk|
-      sdk.source_files = 'KcDebugTool/Classes/sdk/**/*'
-      sdk.frameworks = 'UIKit'
+  s.subspec 'sdk' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/sdk/**/*'
+      ss.frameworks = 'UIKit'
   end
   
   # 用于hook
@@ -102,6 +102,11 @@ TODO: Add long description of the pod here.
       d.dependency 'KcDebugTool/autoLayout'
 #      m.dependency 'TrampolineHook'
   end
+  
+#  s.subspec 'MrcUtil' do |ss|
+#      ss.requires_arc = false # 默认为MRC
+#      ss.source_files = 'KcDebugTool/Classes/mrc/**/*'
+#  end
   
   # MARK: - Zombie 野指针
   # s.subspec 'Zombie' do |ss|

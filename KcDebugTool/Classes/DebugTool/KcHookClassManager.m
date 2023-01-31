@@ -161,6 +161,39 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 //    [[self kc_hookTool] kc_hookWithObjc:WKWebView.class selector:@selector(setUserInteractionEnabled:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 //
 //    } error:nil];
+    
+//    [NSObject.kc_hookTool kc_hookWithObjc:UIView.class selector:@selector(removeFromSuperview) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        if ([info.instance isKindOfClass:[UIToolbar class]]) {
+//            NSLog(@"");
+//        }
+//    } error:nil];
+//
+//    [NSObject.kc_hookTool kc_hookWithObjc:UIView.class selector:@selector(addSubview:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        if ([info.arguments.firstObject isKindOfClass:[UITabBar class]]) {
+//            NSLog(@"%@", info.instance);
+//            NSLog(@"");
+//        }
+//    } error:nil];
+    
+    
+//    [self observerThreadInfo];
+}
+
+/// 监听线程信息
++ (void)observerThreadInfo {
+    static dispatch_source_t timer;
+    if (timer == nil) {
+        dispatch_queue_t queue = dispatch_queue_create("com.kc.timer.queue", 0);
+        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+        dispatch_source_set_timer(timer, DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC, 1 * NSEC_PER_SEC);
+        dispatch_source_set_event_handler(timer, ^{
+            NSString *callStackSymbols = [SMCallStack callStackWithType:SMCallStackTypeAll isRunning:true isFilterCurrentThread:true];
+            NSLog(@"---------------------------");
+            NSLog(@"%@", callStackSymbols);
+            NSLog(@"---------------------------");
+        });
+        dispatch_resume(timer);
+    }
 }
 
 /// 同步不延迟 hook (有些class, 延迟hook有问题)
@@ -197,9 +230,24 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
         }];
     }
     
+//    [KcAllocBigMemoryMonitor beginMonitor];
+//
+//    [KcDetectLargerImageTool start];
+    
 //    [NSObject kc_hook_gestureRecognizerAllTargetActionWithBlock:^(KcHookAspectInfo * _Nonnull info) {
 //
 //    }];
+    
+    Class cls = NSClassFromString(@"Yalla.YLAppDelegate");
+    
+    if (cls) {
+        [NSObject.kc_hookTool kc_hookWithObjc:cls selector:@selector(application:didFinishLaunchingWithOptions:) withOptions:KcAspectTypeAfter usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+            id<KcAspectInfo> aspectInfo = info.aspectInfo;
+            
+            [KcLogParamModel logWithKey:@"didFinishLaunching" format:@"duration: %0.2fms", aspectInfo.duration * 1000];
+            
+        } error:nil];
+    }
 }
 
 /// hook一些class的所有方法
@@ -243,6 +291,25 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
     return blackSelectors;
 }
 
+//static uintptr_t g_text_start;
+//static uintptr_t g_text_end;
+//
+//+ (void)load {
+//    const struct mach_header_64 *header = _dyld_get_image_header(0);
+//
+//    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+//
+//    const struct section_64 *section_text = getsectbyname("__TEXT", "__text");
+//
+//    const struct segment_command_64 *command = getsegbyname("__TEXT");
+//
+//    g_text_start = command->vmaddr;
+//    g_text_end = g_text_start + section_text->size;
+//
+//
+//    uint64_t slide1 = (UInt64)header - g_text_start;
+//}
+
 #pragma mark - clang插桩hook(会hook所有自定义的方法)
 
 /* 使用 https://clang.llvm.org/docs/SanitizerCoverage.html
@@ -268,10 +335,26 @@ __attribute__((constructor)) void kc_hookDebugClass(void) {
 //    //if (!*guard) return;  // Duplicate the guard check.
 //
 //    void *PC = __builtin_return_address(0);
-//    Dl_info info;
-//    dladdr(PC, &info);
+////    printf("gg --- %ld, %ld \n", g_text_start, g_text_end);
 //
-////    printf("fbase=%p sname=%s saddr=%p %p \n", info.dli_fbase, info.dli_sname, info.dli_saddr, PC);
+//    UInt64 address = (UInt64)PC;
+//
+//    if (g_text_start != 0 && g_text_end != 0 && address >= g_text_start && address <= g_text_end) {
+////        Dl_info info;
+////        dladdr(PC, &info);
+////
+////        if ([@(info.dli_sname) containsString:@"SawaKSA"]) {
+////            printf("abcd --- sname=%s \n", info.dli_sname);
+////        }
+//    }
+//    else {
+//        Dl_info info;
+//        dladdr(PC, &info);
+//
+//        printf("other --- sname=%s \n", info.dli_sname);
+//    }
+//
+////    printf("fbase=%p sname=%s saddr=%p dli_fname=%s \n", info.dli_fbase, info.dli_sname, info.dli_saddr, info.dli_fname);
 ////    NSString *name = [NSString stringWithUTF8String:info.dli_sname]; // -[NLRoomDRHelper onTimer:]
 ////    if (name.length > 1 && [name containsString:@"["]) {
 ////        name = [name substringFromIndex:2];
