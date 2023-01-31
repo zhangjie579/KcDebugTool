@@ -222,17 +222,20 @@ _UIGestureRecognizerSendTargetActions
     id target = info.arguments.firstObject;
     id action = info.arguments.count >= 2 ? info.arguments[1] : nil;
     
-//    __weak typeof(info.instance) weakInstance = info.instance;
+    __weak typeof(info.instance) weakInstance = info.instance;
     [self kc_hook_customClassWithTarget:target
                                  action:action
                             logIdentity:@"UIGestureRecognizer"
                                   block:^(KcHookAspectInfo *subInfo) {
-//        __strong typeof(weakInstance) objc = weakInstance;
-//        if ([objc isKindOfClass:[UIGestureRecognizer class]]) {
-//            UIGestureRecognizer *gesture = (UIGestureRecognizer *)objc;
-//            UIView *view = gesture.view;
-//
-//            // 因为对于rx这种用于block保证的, 知道target/action也没用
+        __strong typeof(weakInstance) objc = weakInstance;
+        
+        NSString *gestureViewDesc = @"";
+        
+        if ([objc isKindOfClass:[UIGestureRecognizer class]]) {
+            UIGestureRecognizer *gesture = (UIGestureRecognizer *)objc;
+            gestureViewDesc = gesture.view ? [KcLogParamModel swiftInstanceDesc:gesture.view] : @"";
+
+            // 因为对于rx这种用于block保证的, 知道target/action也没用
 //            if (@available(iOS 13.0, *)) {
 //                KcPropertyResult *property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:view startSearchView:nil isLog:false];
 //                if (property) {
@@ -244,10 +247,10 @@ _UIGestureRecognizerSendTargetActions
 //                    return;
 //                }
 //            }
-//        }
+        }
         
         [KcLogParamModel logWithKey:@"UIGestureRecognizer"
-                             format:@"target: %@, action: %@", subInfo.className, subInfo.selectorName];
+                             format:@"target: %@, action: %@, view: %@", subInfo.className, subInfo.selectorName, gestureViewDesc];
     }];
 }
 
@@ -355,7 +358,8 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
 //    id instance = info.instance;
     
     // 那个对象的event
-    NSString *instanceDesc = @"";
+    NSString *instanceDesc = info.instance ? [KcLogParamModel swiftInstanceDesc:info.instance] : @"";
+    
 //    if (@available(iOS 13.0, *)) {
 //        if ([instance isKindOfClass:[UIView class]]) {
 //            KcPropertyResult *result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:instance startSearchView:nil isLog:false];
@@ -369,9 +373,9 @@ __CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__
     
     // 如果target非自定义class, 不log target
     if ([NSObject kc_isCustomClass:[target class]]) {
-        [KcLogParamModel logWithKey:@"sendAction" format:@"class: %@, action: %@, target: %@ %@", className, action, [KcLogParamModel instanceDesc:target], instanceDesc];
+        [KcLogParamModel logWithKey:@"sendAction" format:@"class: %@, action: %@, target: %@, instance: %@", className, action, [KcLogParamModel instanceDesc:target], instanceDesc];
     } else {
-        [KcLogParamModel logWithKey:@"sendAction" format:@"class: %@, action: %@ %@", className, action, instanceDesc];
+        [KcLogParamModel logWithKey:@"sendAction" format:@"class: %@, action: %@, instance: %@", className, action, instanceDesc];
     }
 }
 
