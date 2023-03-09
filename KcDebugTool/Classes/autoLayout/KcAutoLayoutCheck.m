@@ -19,14 +19,17 @@
 
 /// 检查丢失水平约束的UIView子类
 + (void)checkMixHorizontalMaxLayoutWithWhiteClass:(NSSet<Class> *)whiteClasses blackClasses:(nullable NSSet<Class> *)blackClasses {
+    if (![self hasCheckMissMaxLayoutIMP]) {
+        [KcLogParamModel logWithKey:@"自动布局❌" format:@"%@", @"需要注入检测方法, 或者替换SnapKit库"];
+        return;
+    }
+    
     KcHookTool *hook = [[KcHookTool alloc] init];
     
     [hook kc_hookWithObjc:UIView.class selector:@selector(layoutSubviews) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         
-        
-        
         Class cls = [info.instance class];
-        if ([blackClasses containsObject:cls]
+        if ((blackClasses && [blackClasses containsObject:cls])
             || ![whiteClasses containsObject:cls]
             || ![self checkMissMaxLayoutWithView:info.instance forAxis:UILayoutConstraintAxisHorizontal]) {
             return;
@@ -59,6 +62,32 @@
     }
     
     return propertys;
+}
+
+/// 检查translatesAutoresizingMaskIntoConstraints的值
++ (void)checkTranslatesAutoresizingMaskIntoConstraints {
+//    KcHookTool *hook = [[KcHookTool alloc] init];
+//    
+//    [hook kc_hookWithObjc:UIView.class selector:@selector(layoutSubviews) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//        
+//        if (!info.instance || ![info.instance isKindOfClass:[UIView class]]) {
+//            return;
+//        }
+//        
+//        UIView *view = info.instance;
+//        
+//        if (view.constraints.count <= 0) {
+//            return;
+//        }
+//        
+//        if (!view.translatesAutoresizingMaskIntoConstraints) {
+//            return;
+//        }
+//        
+//        KcPropertyResult *_Nullable property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:info.instance startSearchView:nil isLog:false];
+//        [KcLogParamModel logWithKey:@"constraint - translatesAutoresizingMaskIntoConstraints未设置为false⚠️" format:@"%@", property.debugLog ?: view];
+//        
+//    } error:nil];
 }
 
 + (void)missMaxConstraintViewHierarchyWithView:(__kindof UIView *)view forAxis:(UILayoutConstraintAxis)axis classType:(Class)classType troubleView:(NSMutableArray<UIView *> *)troubleView {
@@ -214,6 +243,31 @@ static BOOL(^gCheckMissMaxLayoutIMP)(UIView *, UILayoutConstraintAxis);
     }
     
     return gCheckMissMaxLayoutIMP(view, axis);
+}
+
+/// 是否有check miss max layout的函数指针
++ (BOOL)hasCheckMissMaxLayoutIMP {
+    if (gCheckMissMaxLayoutIMP) {
+        return true;
+    }
+    
+    Class cls = NSClassFromString(@"KcConstraintCheck");
+    SEL selector = NSSelectorFromString(@"missMaxConstraintWithView:for:");
+    IMP imp = class_getMethodImplementation(object_getClass(cls), selector);
+    
+    if (!imp) {
+        return false;
+    }
+    
+    BOOL(*point)(Class, SEL, UIView *, UILayoutConstraintAxis) = (void *)imp;
+    
+    BOOL(^block)(UIView *view, UILayoutConstraintAxis axis) = [^BOOL(UIView *view, UILayoutConstraintAxis axis){
+        // 通过这种方式, 就算有left、right约束, 也可能是把super撑起来, 也就是没最大限制的约束
+//        NSArray<__kindof NSLayoutConstraint *> *constraints = [view constraintsAffectingLayoutForAxis:axis];
+        return point(cls, selector, view, axis);
+    } copy];
+    
+    [self setCheckMissMaxLayout:block];
 }
 
 @end

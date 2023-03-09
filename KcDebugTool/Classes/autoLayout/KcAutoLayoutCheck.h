@@ -21,6 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// @param classType 检查的class类型
 + (nullable NSMutableArray<KcPropertyResult *> *)missMaxConstraintViewHierarchyWithView:(__kindof UIView *)view forAxis:(UILayoutConstraintAxis)axis classType:(Class)classType;
 
+/// 检查translatesAutoresizingMaskIntoConstraints的值
++ (void)checkTranslatesAutoresizingMaskIntoConstraints;
+
 #pragma mark - 检查约束丢失的IMP
 
 /// 设置丢失最大约束的函数指针(外部提供实现)
