@@ -50,9 +50,11 @@
         }
     }
     
-    NSString *javaScript = [NSString stringWithFormat:@"window.webkit.messageHandlers.%@.postMessage(%@)", name, JSONString];
+    // 这里('%@') 如果用 "" 会失败, 不知道为什么, 很奇怪
+    NSString *javaScript = [NSString stringWithFormat:@"window.webkit.messageHandlers.%@.postMessage('%@')", name, JSONString];
     
     [self evaluateJavaScript:javaScript completionHandler:^(id _Nullable objc, NSError * _Nullable error) {
+        // 就算报error, 也可能已经执行成功了
         if (error) {
             [KcLogParamModel logWithKey:@"JS与原生交互" format:@"error: %@", error.description];
         }
