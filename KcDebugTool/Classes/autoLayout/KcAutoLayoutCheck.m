@@ -18,7 +18,9 @@
 @implementation KcAutoLayoutCheck
 
 /// 检查丢失水平约束的UIView子类
-+ (void)checkMixHorizontalMaxLayoutWithWhiteClass:(NSSet<Class> *)whiteClasses blackClasses:(nullable NSSet<Class> *)blackClasses {
++ (void)checkMixHorizontalMaxLayoutWithWhiteClass:(NSSet<Class> *)whiteClasses
+                                     blackClasses:(nullable NSSet<Class> *)blackClasses
+                                blackSuperClasses:(nullable NSSet<Class> *)blackSuperClasses {
     if (![self hasCheckMissMaxLayoutIMP]) {
         [KcLogParamModel logWithKey:@"自动布局❌" format:@"%@", @"需要注入检测方法, 或者替换SnapKit库"];
         return;
@@ -28,6 +30,15 @@
     
     [hook kc_hookWithObjc:UIView.class selector:@selector(layoutSubviews) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         
+        if (!info.instance) {
+            return;
+        }
+        
+        Class superClass = [[info.instance superview] class];
+        if (superClass && blackSuperClasses && [blackSuperClasses containsObject:superClass]) {
+            return;
+        }
+        
         Class cls = [info.instance class];
         if ((blackClasses && [blackClasses containsObject:cls])
             || ![whiteClasses containsObject:cls]
@@ -35,8 +46,10 @@
             return;
         }
         
-        KcPropertyResult *property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:info.instance startSearchView:nil isLog:false];
-        [KcLogParamModel logWithKey:@"constraint - 缺少水平最大约束⚠️" format:@"%@", property.debugLog];
+        KcPropertyResult *_Nullable property = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:info.instance startSearchView:nil isLog:false];
+        if (property) {
+            [KcLogParamModel logWithKey:@"constraint - 缺少水平最大约束⚠️" format:@"%@", property.debugLog];
+        }
         
     } error:nil];
 }
@@ -268,6 +281,8 @@ static BOOL(^gCheckMissMaxLayoutIMP)(UIView *, UILayoutConstraintAxis);
     } copy];
     
     [self setCheckMissMaxLayout:block];
+    
+    return true;
 }
 
 @end

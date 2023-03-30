@@ -14,7 +14,10 @@ NS_ASSUME_NONNULL_BEGIN
 @interface KcAutoLayoutCheck : NSObject
 
 /// 检查丢失水平约束的UIView子类
-+ (void)checkMixHorizontalMaxLayoutWithWhiteClass:(NSSet<Class> *)whiteClasses blackClasses:(nullable NSSet<Class> *)blackClasses;
+/// 检查丢失水平约束的UIView子类
++ (void)checkMixHorizontalMaxLayoutWithWhiteClass:(NSSet<Class> *)whiteClasses
+                                     blackClasses:(nullable NSSet<Class> *)blackClasses
+                                blackSuperClasses:(nullable NSSet<Class> *)blackSuperClasses;
 
 /// 检查view层级丢失 <= 的约束
 /// @param axis 检查是水平还是竖直方向
