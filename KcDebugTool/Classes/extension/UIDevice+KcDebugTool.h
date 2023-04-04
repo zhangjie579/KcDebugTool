@@ -17,6 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// 架构类型
 + (NSString *)getArch;
 
++ (nullable NSString *)kc_bundleName;
+
 @end
 
 NS_ASSUME_NONNULL_END

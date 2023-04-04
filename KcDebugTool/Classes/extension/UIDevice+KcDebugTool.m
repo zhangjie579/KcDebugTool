@@ -51,4 +51,16 @@
     return arch;
 }
 
++ (nullable NSString *)kc_bundleName {
+    NSString *_Nullable appName = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleName"];
+    if (!appName) {
+        return nil;
+    }
+    
+    appName = [appName stringByReplacingOccurrencesOfString:@" " withString:@"_"];
+    appName = [appName stringByReplacingOccurrencesOfString:@"-" withString:@"_"];
+    
+    return appName;
+}
+
 @end
