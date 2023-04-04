@@ -83,7 +83,7 @@ static NSUInteger getImageMemoryLimit() {
         }
         
         NSLog(@"------- ❎ 大图 ❎-------");
-        NSLog(@"🐶🐶🐶 采用animationImages动画⚠️ imageView尺寸: %@, 图片尺寸: %@, 图片内存: %0.3fM", NSStringFromCGSize(imageViewSize), NSStringFromCGSize(firstImage.size), [self imageCost2:firstImage] / (1024.0 * 1024.0));
+        NSLog(@"🐶🐶🐶 采用animationImages动画⚠️ imageView: <%@: %p>, 尺寸: %@, 图片尺寸: %@, 图片内存: %0.3fM", NSStringFromClass(imageView.class), imageView, NSStringFromCGSize(imageViewSize), NSStringFromCGSize(firstImage.size), [self imageCost2:firstImage] / (1024.0 * 1024.0));
 //            [imageView kc_debug_findPropertyName];
         KcPropertyResult *_Nullable result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:imageView startSearchView:imageView.nextResponder isLog:false];
         if (result) {
@@ -109,7 +109,7 @@ static NSUInteger getImageMemoryLimit() {
         }
         
         NSLog(@"------- ❎ 大图 ❎-------");
-        NSLog(@"🐶🐶🐶 imageView尺寸: %@, 图片尺寸: %@, 图片内存: %0.3fM", NSStringFromCGSize(imageViewSize), NSStringFromCGSize(image.size), [self imageCost2:image] / (1024.0 * 1024.0));
+        NSLog(@"🐶🐶🐶 imageView: <%@: %p>, 尺寸: %@, 图片尺寸: %@, 图片内存: %0.3fM", NSStringFromClass(imageView.class), imageView, NSStringFromCGSize(imageViewSize), NSStringFromCGSize(image.size), [self imageCost2:image] / (1024.0 * 1024.0));
 //            [imageView kc_debug_findPropertyName];
         KcPropertyResult *_Nullable result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:imageView startSearchView:imageView.nextResponder isLog:false];
         if (result) {
