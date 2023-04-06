@@ -13,6 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void)start;
 
++ (void)startWithImageInfoBlock:(NSString *(*)(UIImageView *))imageInfoBlock;
+
 @end
 
 NS_ASSUME_NONNULL_END

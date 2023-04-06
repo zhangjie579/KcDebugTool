@@ -7,6 +7,7 @@
 
 #import "KcDetectLargerImageTool.h"
 #import "KcHookTool.h"
+#import <objc/message.h>
 @import KcDebugSwift;
 
 @implementation KcDetectLargerImageTool
@@ -24,8 +25,19 @@ static NSUInteger getImageMemoryLimit() {
 }
 
 + (void)start {
+    [self startWithImageInfoBlock:nil];
+}
+
+static NSString *(*kc_imageInfoBlock)(UIImageView *);
+
++ (void)startWithImageInfoBlock:(NSString *(*)(UIImageView *))imageInfoBlock {
     KcHookTool *tool = [[KcHookTool alloc] init];
 
+    if (imageInfoBlock && (intptr_t)imageInfoBlock != (intptr_t)_objc_msgForward) {
+        kc_imageInfoBlock = imageInfoBlock;
+    }
+    
+    
     // contents
 //    [tool kc_hookWithObjc:CALayer.class selector:@selector(setContents:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
 //        id __nullable contents = info.arguments.firstObject;
@@ -108,8 +120,16 @@ static NSUInteger getImageMemoryLimit() {
             return;
         }
         
+        NSString *imageNameInfo = @"";
+        if (kc_imageInfoBlock) {
+            NSString *imageName = kc_imageInfoBlock(imageView);
+            if (imageName.length > 0) {
+                imageNameInfo = [NSString stringWithFormat:@" imageInfo: %@,", imageName];
+            }
+        }
+        
         NSLog(@"------- ❎ 大图 ❎-------");
-        NSLog(@"🐶🐶🐶 imageView: <%@: %p>, 尺寸: %@, 图片尺寸: %@, 图片内存: %0.3fM", NSStringFromClass(imageView.class), imageView, NSStringFromCGSize(imageViewSize), NSStringFromCGSize(image.size), [self imageCost2:image] / (1024.0 * 1024.0));
+        NSLog(@"🐶🐶🐶 imageView: <%@: %p>,%@ 尺寸: %@, 图片尺寸: %@, 图片内存: %0.3fM", NSStringFromClass(imageView.class), imageView, imageNameInfo, NSStringFromCGSize(imageViewSize), NSStringFromCGSize(image.size), [self imageCost2:image] / (1024.0 * 1024.0));
 //            [imageView kc_debug_findPropertyName];
         KcPropertyResult *_Nullable result = [KcFindPropertyTooler findResponderChainObjcPropertyNameWithObject:imageView startSearchView:imageView.nextResponder isLog:false];
         if (result) {
