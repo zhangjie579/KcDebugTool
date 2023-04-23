@@ -26,7 +26,16 @@ typedef NS_ENUM(NSUInteger, SMCallStackType) {
 ///   - type: 类型
 ///   - isRunning: 是否要CPU运行中的线程, CPU使用率 > 0表示在运行
 ///   - isFilterCurrentThread: 是否过滤当前线程
-+ (NSString *)callStackWithType:(SMCallStackType)type isRunning:(BOOL)isRunning isFilterCurrentThread:(BOOL)isFilterCurrentThread;
++ (NSString *)callStackWithType:(SMCallStackType)type
+                      isRunning:(BOOL)isRunning
+          isFilterCurrentThread:(BOOL)isFilterCurrentThread;
+
+/// 获取当前线程id
++ (uint64_t)currentThreadID;
+
+/// 获取线程id, thread_t currentThread = mach_thread_self(); (返回值为0说明error)
+/// @param thread mach_thread_self()
++ (uint64_t)threadIDWithThread:(thread_t)thread;
 
 extern NSString *smStackOfThread(thread_t thread);
 

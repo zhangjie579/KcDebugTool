@@ -35,6 +35,7 @@ typedef struct SMThreadInfoStruct {
 } SMThreadInfoStruct;
 
 static mach_port_t _smMainThreadId;
+
 @implementation SMCallStack
 
 + (void)load {
@@ -53,7 +54,9 @@ static mach_port_t _smMainThreadId;
 ///   - type: 类型
 ///   - isRunning: 是否要CPU运行中的线程, CPU使用率 > 0表示在运行
 ///   - isFilterCurrentThread: 是否过滤当前线程
-+ (NSString *)callStackWithType:(SMCallStackType)type isRunning:(BOOL)isRunning isFilterCurrentThread:(BOOL)isFilterCurrentThread {
++ (NSString *)callStackWithType:(SMCallStackType)type
+                      isRunning:(BOOL)isRunning
+          isFilterCurrentThread:(BOOL)isFilterCurrentThread {
     if (type == SMCallStackTypeAll) {
         thread_act_array_t threads; //int 组成的数组比如 thread[1] = 5635
         mach_msg_type_number_t thread_count = 0; //mach_msg_type_number_t 是 int 类型
@@ -63,44 +66,24 @@ static mach_port_t _smMainThreadId;
         if (kr != KERN_SUCCESS) {
             return @"fail get all threads";
         }
-        thread_info_data_t current_info;
-        mach_msg_type_number_t inOutSize;
-        thread_t currentThread = mach_thread_self();
-        kr = thread_info((thread_t)currentThread, THREAD_IDENTIFIER_INFO, current_info, &inOutSize);
-        uint64_t current_thread_id = 0;
-        if (kr == KERN_SUCCESS) {
-            thread_identifier_info_t idInfo = (thread_identifier_info_t)current_info;
-            // https://juejin.cn/post/7036299565565214728
-//            current_queue_name = [MrcUtil threadNameWithThreadInfo:idInfo];
-//            dispatch_queue_t* dispatch_queue_ptr = (dispatch_queue_t*)idInfo->dispatch_qaddr;
-//            dispatch_queue_t dispatch_queue = *dispatch_queue_ptr;
-//            const char* queue_name = dispatch_queue_get_label(dispatch_queue);
-            current_thread_id = idInfo->thread_id;
-        }
         
         NSMutableString *reStr = [NSMutableString stringWithFormat:@"Call %u threads:\n", thread_count];
         for (int i = 0; i < thread_count; i++) {
             //当前执行的指令
             thread_t thread = threads[i];
-            thread_info_data_t threadInfo;
-            mach_msg_type_number_t inSize;
             
             // 过滤当前线程
-            if (isFilterCurrentThread && thread == mach_thread_self()) {
+            // mach_thread_self() 不能存, 会一直变的⚠️
+            if (isFilterCurrentThread && thread != 0 && thread == mach_thread_self()) {
                 continue;
             }
-            
-            if (thread_info((thread_t)thread, THREAD_IDENTIFIER_INFO, threadInfo, &inSize) == KERN_SUCCESS) {
-                uint64_t thread_id = ((thread_identifier_info_t)threadInfo)->thread_id;
-                if (isFilterCurrentThread && current_thread_id != 0 && thread_id == current_thread_id) {
-                    continue;
-                }
-                
-            }
-            
-            thread_identifier_info_t testInfo = (thread_identifier_info_t)threadInfo;            
+                      
             ThreadInfoObjc *info = smStackOfThreadInfo(thread);
             if (!isRunning || (isRunning && info.cpuUsage > 0)) {
+                if ([info.desc containsString:@"+[SMCallStack callStackWithType"]) {
+                    NSLog(@"");
+                }
+                
                 [reStr appendString:info.desc];
             }
         }
@@ -168,6 +151,32 @@ static mach_port_t _smMainThreadId;
         return [reStr copy];
     }
     return @"";
+}
+
+/// 获取当前线程id
++ (uint64_t)currentThreadID {
+    return [self threadIDWithThread:mach_thread_self()];
+}
+
+/// 获取当前线程id, thread_t currentThread = mach_thread_self();
++ (uint64_t)threadIDWithThread:(thread_t)thread {
+    thread_info_data_t current_info;
+    mach_msg_type_number_t inOutSize;
+    kern_return_t kr = thread_info((thread_t)thread, THREAD_IDENTIFIER_INFO, current_info, &inOutSize);
+    uint64_t current_thread_id = 0;
+    if (kr == KERN_SUCCESS) {
+        thread_identifier_info_t idInfo = (thread_identifier_info_t)current_info;
+        // https://juejin.cn/post/7036299565565214728
+//            current_queue_name = [MrcUtil threadNameWithThreadInfo:idInfo];
+//            dispatch_queue_t* dispatch_queue_ptr = (dispatch_queue_t*)idInfo->dispatch_qaddr;
+//            dispatch_queue_t dispatch_queue = *dispatch_queue_ptr;
+//            const char* queue_name = dispatch_queue_get_label(dispatch_queue);
+        current_thread_id = idInfo->thread_id;
+        
+        return current_thread_id;
+    } else {
+        return 0;
+    }
 }
 
 #pragma mark - get stack of mach_thread
