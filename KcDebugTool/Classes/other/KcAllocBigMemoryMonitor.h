@@ -10,6 +10,17 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/*
+ OOMDetector
+ 
+ https://blog.51cto.com/u_15082365/5471209
+ 
+ hook malloc之类的方法
+ https://github.com/wzpziyi1/MemoryDetector
+ 
+ 这种方式的问题: 堆栈与实际对象可能失去联系了, 大部分都是系统堆栈, 看不到自己写的代码
+ */
+
 /// 监听大内存分配
 @interface KcAllocBigMemoryMonitor : NSObject
 
