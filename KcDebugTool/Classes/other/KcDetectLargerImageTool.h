@@ -13,7 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void)start;
 
-+ (void)startWithImageInfoBlock:(NSString *(*)(UIImageView *))imageInfoBlock;
++ (void)startWithImageInfoBlock:(NSString *_Nullable(*_Nullable)(UIImageView *))imageInfoBlock;
 
 @end
 
