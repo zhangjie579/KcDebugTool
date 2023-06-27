@@ -18,7 +18,7 @@ typedef NS_ENUM(NSUInteger, SMCallStackType) {
 
 @interface SMCallStack : NSObject
 
-/// 线程调用堆栈, isRunning = false
+/// 线程调用堆栈, isRunning = false, isFilterCurrentThread = false
 + (NSString *)callStackWithType:(SMCallStackType)type;
 
 /// 线程调用堆栈

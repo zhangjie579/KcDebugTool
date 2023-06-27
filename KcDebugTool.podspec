@@ -69,6 +69,8 @@ TODO: Add long description of the pod here.
       ss.dependency 'KcDebugTool/sdk'
       ss.dependency 'KcDebugTool/model'
       ss.dependency "KcDebugSwift/FindProperty"
+      
+      ss.dependency "fishhook"
   end
   
   s.subspec 'extension' do |ss|
