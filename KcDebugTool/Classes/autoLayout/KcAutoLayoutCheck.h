@@ -39,6 +39,11 @@ NS_ASSUME_NONNULL_BEGIN
  */
 + (BOOL)checkMissMaxLayoutWithView:(__kindof UIView *)view forAxis:(UILayoutConstraintAxis)axis;
 
+#pragma mark - 异常check
+
+/// check 异常
++ (void)checkException;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -285,4 +285,48 @@ static BOOL(^gCheckMissMaxLayoutIMP)(UIView *, UILayoutConstraintAxis);
     return true;
 }
 
+#pragma mark - 异常check
+
+/// check 异常
++ (void)checkException {
+    KcHookTool *hook = [[KcHookTool alloc] init];
+    
+    // 优先级
+    [hook kc_hookWithObjc:NSLayoutConstraint.class selector:@selector(setPriority:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        
+        NSLayoutConstraint * _Nullable constraint = info.instance;
+        
+        if (constraint == nil || ![constraint isKindOfClass:[NSLayoutConstraint class]]) {
+            return;
+        }
+        
+        UILayoutPriority priority = [info.arguments.firstObject floatValue];
+        
+        // https://developer.apple.com/documentation/uikit/nslayoutconstraint/1526946-priority
+        // Priorities may not change from nonrequired to required, or from required to nonrequired. An exception will be thrown if a priority of required in macOS or UILayoutPriorityRequired in iOS is changed to a lower priority, or if a lower priority is changed to a required priority after the constraints is added to a view. Changing from one optional priority to another optional priority is allowed even after the constraint is installed on a view.
+        if (constraint.isActive) {
+            if (constraint.priority == UILayoutPriorityRequired || priority == UILayoutPriorityRequired) {
+                NSAssert(!constraint.isActive, @"激活后不允许修改priority⚠️");
+            }
+        }
+        
+        
+    } error:nil];
+    
+//    [NSAssertionHandler.currentHandler handleFailureInMethod:<#(nonnull SEL)#> object:<#(nonnull id)#> file:<#(nonnull NSString *)#> lineNumber:<#(NSInteger)#> description:<#(nullable NSString *), ...#>];
+    
+//    NSError *assertionHandlerError = nil;
+    
+//    [hook kc_hookWithObjc:NSAssertionHandler.class selector:@selector(handleFailureInMethod:object:file:lineNumber:description:) withOptions:KcAspectTypeInstead usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+//
+//        NSArray *arguments = info.arguments;
+//        NSLog(@"%@", arguments);
+//
+//    } error:&assertionHandlerError];
+//
+//    if (assertionHandlerError != nil) {
+//        NSLog(@"❌ hook 失败: %@", assertionHandlerError);
+//    }
+}
+
 @end
