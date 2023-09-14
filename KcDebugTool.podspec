@@ -105,6 +105,11 @@ TODO: Add long description of the pod here.
 #      m.dependency 'TrampolineHook'
   end
   
+  s.subspec 'lldb' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/lldb/**/*'
+      ss.frameworks = 'UIKit'
+  end
+  
 #  s.subspec 'MrcUtil' do |ss|
 #      ss.requires_arc = false # 默认为MRC
 #      ss.source_files = 'KcDebugTool/Classes/mrc/**/*'

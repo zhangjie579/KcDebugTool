@@ -12,6 +12,7 @@
 #import "KCLoggerInternal.h"
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
+#import <execinfo.h>
 //#import "fishhook.h"
 
 #define KC_USE_PRIVATE_API 1
@@ -62,6 +63,18 @@ VM_FLAGS_ALIAS_MASK);
 
 #define kc_memory_logging_type_mapped_file_or_shared_mem 128
 
+//#define memory_logging_type_free 0
+//#define memory_logging_type_generic 1 /* anything that is not allocation/deallocation */
+//#define memory_logging_type_alloc 2 /* malloc, realloc, etc... */
+//#define memory_logging_type_dealloc 4 /* free, realloc, etc... */
+//#define memory_logging_type_vm_allocate 16 /* vm_allocate or mmap */
+//#define memory_logging_type_vm_deallocate 32 /* vm_deallocate or munmap */
+//#define MAP_FAILED      ((void *)-1)    /* [MF|SHM] mmap failed */
+
+
+//__disk_stack_logging_log_stack(uint32_t type_flags, uintptr_t zone_ptr, uintptr_t arg2, uintptr_t arg3, uintptr_t return_val, uint32_t num_hot_to_skip)
+
+
 // kc_hook_malloc_stack_logger具体实现
 void kc_hook_malloc_stack_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t result, uint32_t backtrace_to_skip)
 {
@@ -69,12 +82,12 @@ void kc_hook_malloc_stack_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2, 
         orig_malloc_logger(type, arg1, arg2, arg3, result, backtrace_to_skip);
     }
     
-    uint32_t alias = 0;
-    VM_GET_FLAGS_ALIAS(type, alias);
-    // skip all VM allocation events from malloc_zone
-    if (alias >= VM_MEMORY_MALLOC && alias <= VM_MEMORY_MALLOC_NANO) {
-        return;
-    }
+//    uint32_t alias = 0;
+//    VM_GET_FLAGS_ALIAS(type, alias);
+//    // skip all VM allocation events from malloc_zone
+//    if (alias >= VM_MEMORY_MALLOC && alias <= VM_MEMORY_MALLOC_NANO) {
+//        return;
+//    }
 
     // skip allocation events from mapped_file
     if (type & kc_memory_logging_type_mapped_file_or_shared_mem) {
@@ -102,8 +115,16 @@ void kc_hook_malloc_stack_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2, 
         // arg2 为分配内存大小
         handle_malloc_observer(arg2);
     } else if (type == (MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_DEALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE)) { // malloc_zone_realloc 重新分配内存
-        // arg3 为分配内存大小
-        handle_malloc_observer(arg3);
+        uintptr_t ptr_arg = arg2; // the original pointer
+        if (ptr_arg == result) {
+            return; // realloc had no effect, skipping
+        }
+        if (ptr_arg == 0) { // // realloc(NULL, size) same as malloc(size)
+            // type ^= memory_logging_type_dealloc;
+        } else {
+            // arg3 为分配内存大小
+            handle_malloc_observer(arg3);
+        }
     } else if (type == (MALLOC_LOG_TYPE_DEALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE)) { // malloc_zone_free
         //        uintptr_t size = arg3;
         //        uintptr_t ptr_arg = arg2;
@@ -112,12 +133,73 @@ void kc_hook_malloc_stack_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2, 
         //        }
     } else if (type & stack_logging_type_vm_allocate) { // vm_allocate or mmap
         // vm_allocate 没走这个⚠️
-        if (result == 0 || result == (uintptr_t)((void *)-1)) {
+        if (result == 0 || result == (uintptr_t)((void *)-1)) { // -1是MAP_FAILED
             return;
         }
         handle_malloc_observer(arg2);
     }
 }
+
+//void kc_hook_malloc_stack_logger(uint32_t type_flags, uintptr_t zone_ptr, uintptr_t arg2, uintptr_t arg3, uintptr_t return_val, uint32_t num_hot_to_skip) {
+//    uintptr_t size = 0;
+//    uintptr_t ptr_arg = 0;
+//    bool is_alloc = false;
+//
+//    uint32_t alias = 0;
+//    VM_GET_FLAGS_ALIAS(type_flags, alias);
+//    // skip all VM allocation events from malloc_zone
+//    if (alias >= VM_MEMORY_MALLOC && alias <= VM_MEMORY_MALLOC_NANO) {
+//        return;
+//    }
+//
+//    // skip allocation events from mapped_file
+//    if (type_flags & kc_memory_logging_type_mapped_file_or_shared_mem) {
+//        return;
+//    }
+//
+//    // check incoming data
+//    if ((type_flags & memory_logging_type_alloc) && (type_flags & memory_logging_type_dealloc)) {
+//        size = arg3;
+//        ptr_arg = arg2; // the original pointer
+//        if (ptr_arg == return_val) {
+//            return; // realloc had no effect, skipping
+//        }
+//        if (ptr_arg == 0) { // realloc(NULL, size) same as malloc(size)
+//            type_flags ^= memory_logging_type_dealloc;
+//        } else {
+//            // realloc(arg1, arg2) -> result is same as free(arg1); malloc(arg2) -> result
+////            __memory_event_callback(memory_logging_type_dealloc, zone_ptr, ptr_arg, (uintptr_t)0, (uintptr_t)0, num_hot_to_skip + 1);
+////            __memory_event_callback(memory_logging_type_alloc, zone_ptr, size, (uintptr_t)0, return_val, num_hot_to_skip + 1);
+//            handle_malloc_observer(size);
+//            return;
+//        }
+//    }
+//    if ((type_flags & memory_logging_type_dealloc) || (type_flags & memory_logging_type_vm_deallocate)) {
+//        size = arg3;
+//        ptr_arg = arg2;
+//        if (ptr_arg == 0) {
+//            return; // free(nil)
+//        }
+//    }
+//    if ((type_flags & memory_logging_type_alloc) || (type_flags & memory_logging_type_vm_allocate)) {
+//        if (return_val == 0 || return_val == (uintptr_t)MAP_FAILED) {
+//            return;
+//        }
+//        size = arg2;
+//        is_alloc = true;
+//    }
+//
+//    //type_flags &= memory_logging_valid_type_flags;
+//
+//    // gather stack, only alloc type
+//    if (is_alloc) {
+//
+//    } else {
+//        // compaction
+//    }
+//
+//    handle_malloc_observer(size);
+//}
 
 static void handle_malloc_observer(uintptr_t memorySize) {
     // 这个可以视情况而定
@@ -192,7 +274,7 @@ static bool isPaused = false;
     isPaused = true;
 }
 
-int backtrace(void *, int);
+//extern int backtrace(void *, int);
 /*
  存在两个问题
  1.方法具有线程属性，必须要在获取堆栈信息的当前线程调用；
@@ -200,7 +282,7 @@ int backtrace(void *, int);
  
  如果大块内存是在主线程分配的，上述耗时会引起主线程卡顿问题，故此方案无法针在线上生产环境使用。
  */
-char **backtrace_symbols(void *, int);
+//extern char **backtrace_symbols(void *, int);
 
 /// 堆栈
 + (NSArray<NSString *> *)backtrace {

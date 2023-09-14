@@ -30,13 +30,6 @@ typedef NS_ENUM(NSUInteger, SMCallStackType) {
                       isRunning:(BOOL)isRunning
           isFilterCurrentThread:(BOOL)isFilterCurrentThread;
 
-/// 获取当前线程id
-+ (uint64_t)currentThreadID;
-
-/// 获取线程id, thread_t currentThread = mach_thread_self(); (返回值为0说明error)
-/// @param thread mach_thread_self()
-+ (uint64_t)threadIDWithThread:(thread_t)thread;
-
 extern NSString *smStackOfThread(thread_t thread);
 
 @end

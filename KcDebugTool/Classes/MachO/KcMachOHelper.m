@@ -18,6 +18,15 @@
 
 @implementation KcMachOHelper
 
++ (instancetype)sharedInstance {
+    static dispatch_once_t onceToken;
+    static KcMachOHelper *shared;
+    dispatch_once(&onceToken, ^{
+        shared = [[KcMachOHelper alloc] init];
+    });
+    return shared;
+}
+
 + (const char *)imageNameWithClass:(Class)cls {
     return class_getImageName(cls);
 }

@@ -6,6 +6,7 @@
 //
 
 #import "SMCallStack.h"
+#import "KcThreadInfo.h"
 
 /// 线程的信息
 @interface ThreadInfoObjc : NSObject
@@ -13,6 +14,8 @@
 @property (nonatomic) double cpuUsage;
 
 @property (nonatomic) integer_t userTime;
+
+@property (nonatomic, copy) NSString *threadName;
 
 //@property (nonatomic) thread_t thread;
 
@@ -68,6 +71,13 @@ static mach_port_t _smMainThreadId;
         }
         
         NSMutableString *reStr = [NSMutableString stringWithFormat:@"Call %u threads:\n", thread_count];
+        
+        // 是否有线程在运行
+        BOOL hasThreadRunning = false;
+        if (!isRunning) {
+            hasThreadRunning = true;
+        }
+        
         for (int i = 0; i < thread_count; i++) {
             //当前执行的指令
             thread_t thread = threads[i];
@@ -80,25 +90,34 @@ static mach_port_t _smMainThreadId;
                       
             ThreadInfoObjc *info = smStackOfThreadInfo(thread);
             if (!isRunning || (isRunning && info.cpuUsage > 0)) {
-                if ([info.desc containsString:@"+[SMCallStack callStackWithType"]) {
-                    NSLog(@"");
-                }
-                
                 [reStr appendString:info.desc];
+                hasThreadRunning = true;
             }
         }
+        
         //task info
-        NSString *memStr = @"";
-        struct mach_task_basic_info taskBasicInfo;
-        mach_msg_type_number_t taskInfoCount = sizeof(taskBasicInfo) / sizeof(integer_t);
-        if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&taskBasicInfo, &taskInfoCount) == KERN_SUCCESS) {
-            memStr = [NSString stringWithFormat:@"used %llu MB \n",taskBasicInfo.resident_size / (1024 * 1024)];
+        if (hasThreadRunning) {
+            NSString *memStr = @"";
+            task_vm_info_data_t taskInfo;
+            mach_msg_type_number_t infoCount = TASK_VM_INFO_COUNT;
+            kern_return_t kernReturn = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&taskInfo, &infoCount);
+            if (kernReturn == KERN_SUCCESS) {
+                memStr = [NSString stringWithFormat:@"used %llu MB \n", taskInfo.phys_footprint / (1024 * 1024)];
+                
+                [reStr appendString:@"\n"];
+                [reStr appendString:memStr];
+            }
         }
         
-        NSLog(@"%@%@",memStr,reStr);
+//        NSLog(@"%@%@",memStr,reStr);
         //释放虚存缓存，防止leak
         assert(vm_deallocate(mach_task_self(), (vm_address_t)threads, thread_count * sizeof(thread_t)) == KERN_SUCCESS);
-        return [reStr copy];
+        
+        if (isRunning && hasThreadRunning) {
+            return [reStr copy];
+        } else {
+            return @"";
+        }
     } else if (type == SMCallStackTypeMain) {
         //主线程
         NSString *reStr = @"";
@@ -153,32 +172,6 @@ static mach_port_t _smMainThreadId;
     return @"";
 }
 
-/// 获取当前线程id
-+ (uint64_t)currentThreadID {
-    return [self threadIDWithThread:mach_thread_self()];
-}
-
-/// 获取当前线程id, thread_t currentThread = mach_thread_self();
-+ (uint64_t)threadIDWithThread:(thread_t)thread {
-    thread_info_data_t current_info;
-    mach_msg_type_number_t inOutSize;
-    kern_return_t kr = thread_info((thread_t)thread, THREAD_IDENTIFIER_INFO, current_info, &inOutSize);
-    uint64_t current_thread_id = 0;
-    if (kr == KERN_SUCCESS) {
-        thread_identifier_info_t idInfo = (thread_identifier_info_t)current_info;
-        // https://juejin.cn/post/7036299565565214728
-//            current_queue_name = [MrcUtil threadNameWithThreadInfo:idInfo];
-//            dispatch_queue_t* dispatch_queue_ptr = (dispatch_queue_t*)idInfo->dispatch_qaddr;
-//            dispatch_queue_t dispatch_queue = *dispatch_queue_ptr;
-//            const char* queue_name = dispatch_queue_get_label(dispatch_queue);
-        current_thread_id = idInfo->thread_id;
-        
-        return current_thread_id;
-    } else {
-        return 0;
-    }
-}
-
 #pragma mark - get stack of mach_thread
 
 NSString *smStackOfThread(thread_t thread) {
@@ -213,6 +206,17 @@ ThreadInfoObjc *smStackOfThreadInfo(thread_t thread) {
     ThreadInfoObjc *infoObjc = [[ThreadInfoObjc alloc] init];
     infoObjc.cpuUsage = threadInfoSt.cpuUsage;
     infoObjc.userTime = threadInfoSt.userTime;
+    
+    char nameBuffer[128];
+    BOOL isSuccess = [KcThreadInfo getQueueName:thread buffer:nameBuffer bufLength:128];
+    if (isSuccess) {
+        infoObjc.threadName = @(nameBuffer);
+    } else {
+        isSuccess = [KcThreadInfo getThreadName:thread buffer:nameBuffer bufLength:128];
+        if (isSuccess) {
+            infoObjc.threadName = @(nameBuffer);
+        }
+    }
     
     //回溯栈的算法
     /*
@@ -586,7 +590,6 @@ uintptr_t smMachThreadGetLinkRegisterPointerByCPU(mcontext_t const machineContex
     return machineContext->__ss.__lr;
 #endif
 }
-
 
 @end
 

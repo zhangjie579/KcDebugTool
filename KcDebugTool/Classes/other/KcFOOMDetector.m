@@ -7,7 +7,11 @@
 
 #import "KcFOOMDetector.h"
 #import <sys/stat.h>
+#if __has_include("fishhook/fishhook.h")
+#import "fishhook/fishhook.h"
+#else
 #import "fishhook.h"
+#endif
 
 NSString *KcPreviousBundleVersionKey = @"KcPreviousBundleVersionKey";
 NSString *KcAppWasTerminatedKey = @"KcAppWasTerminatedKey";

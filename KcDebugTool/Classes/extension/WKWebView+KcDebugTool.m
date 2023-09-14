@@ -126,6 +126,19 @@
     } error:nil];
 }
 
+/// hook reload
++ (void)kc_hook_webView_reloadWithBlock:(void(^)(KcHookAspectInfo * _Nonnull info))block {
+    [self.kc_hookTool kc_hookWithObjc:WKWebView.class
+                             selector:@selector(reload)
+                          withOptions:KcAspectTypeBefore
+                           usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [KcLogParamModel logWithKey:@"WKWebView.reload" format:@""];
+        if (block) {
+            block(info);
+        }
+    } error:nil];
+}
+
 + (void)kc_hook_allInstanceMethodWithBlock:(void(^ _Nullable)(KcHookAspectInfo * _Nonnull info))block
                                filterBlock:(BOOL(^ _Nullable)(KcHookAspectInfo * _Nonnull info))filterBlock {
     NSArray<NSString *> *instanceMethods = [self kc_instanceMethodListWithContainSuper:false];

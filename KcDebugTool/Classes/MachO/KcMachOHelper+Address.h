@@ -34,6 +34,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// 类似于系统的dladdr
 + (BOOL)dladdr:(const uintptr_t)address info:(Dl_info *const)info;
 
+/// 根据地址查询出方法名
+- (nullable NSString *)lookupWithAddress:(NSInteger)address;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -35,6 +35,11 @@ typedef struct nlist kc_nlist_t;
 
 @interface KcMachOHelper : NSObject
 
+/// 地址 : 方法
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSString *> *addressMethodNameDictionary;
+
++ (instancetype)sharedInstance;
+
 + (const char *)imageNameWithClass:(Class)cls;
 
 /// 是否是自定义的image

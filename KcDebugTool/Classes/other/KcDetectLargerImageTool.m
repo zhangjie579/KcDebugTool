@@ -24,6 +24,13 @@ static NSUInteger getImageMemoryLimit() {
     return imageMemoryLimit;
 }
 
+static UInt64 smallImageSize = 1 * 1024 * 1024;
+
+/// 过滤小图的size(比这个小直接过滤掉), 默认 1M
++ (void)filterSmallImageSize:(UInt64)imageSize {
+    smallImageSize = imageSize;
+}
+
 + (void)start {
     [self startWithImageInfoBlock:nil];
 }
@@ -79,6 +86,10 @@ static NSString *(*kc_imageInfoBlock)(UIImageView *);
     // animationImages 动画
     [tool kc_hookWithObjc:UIImageView.class selector:@selector(setAnimationImages:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
         NSArray<UIImage *> * __nullable images = info.arguments.firstObject;
+        if (![images isKindOfClass:[NSArray class]]) {
+            return;
+        }
+        
         if (images.count <= 0) {
             return;
         }
@@ -112,6 +123,10 @@ static NSString *(*kc_imageInfoBlock)(UIImageView *);
         UIImage * __nullable image = info.arguments.firstObject;
         UIImageView *imageView = info.instance;
         CGSize imageViewSize = imageView.bounds.size;
+        
+        if ([imageView isKindOfClass:NSClassFromString(@"Gifu.GIFImageView")]) {
+            return;
+        }
         
         CGSize imageSize = CGSizeZero;
         BOOL tooLarge = [self isTooLargeImageSizeWithImage:image boxSize:imageViewSize imageSize:&imageSize];
@@ -199,6 +214,12 @@ static NSString *(*kc_imageInfoBlock)(UIImageView *);
     
     if ([self isLargeImageWithImage:image memoryLimit:getImageMemoryLimit()]) {
         return true;
+    }
+    
+    NSUInteger imageMemory = [self imageCost2:image];
+    // 1M 以下过滤掉
+    if (imageMemory < smallImageSize) {
+        return false;
     }
     
     // 过滤过小的image size

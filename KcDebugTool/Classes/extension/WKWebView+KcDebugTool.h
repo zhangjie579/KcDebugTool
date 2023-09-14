@@ -43,6 +43,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)kc_hook_allInstanceMethodWithBlock:(void(^ _Nullable)(KcHookAspectInfo * _Nonnull info))block
                                filterBlock:(BOOL(^ _Nullable)(KcHookAspectInfo * _Nonnull info))filterBlock;
 
+/// hook reload
++ (void)kc_hook_webView_reloadWithBlock:(void(^)(KcHookAspectInfo * _Nonnull info))block;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -11,6 +11,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface KcDetectLargerImageTool : NSObject
 
+/// 过滤小图的size(比这个小直接过滤掉), 默认 1M
++ (void)filterSmallImageSize:(UInt64)imageSize;
+
 + (void)start;
 
 + (void)startWithImageInfoBlock:(NSString *_Nullable(*_Nullable)(UIImageView *))imageInfoBlock;
