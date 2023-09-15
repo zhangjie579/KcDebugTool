@@ -9,15 +9,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef enum {
-    kc_stack_logging_mode_none = 0,
-    kc_stack_logging_mode_all,
-    kc_stack_logging_mode_malloc,
-    kc_stack_logging_mode_vm,
-    kc_stack_logging_mode_lite,
-    kc_stack_logging_mode_vmlite
-} kc_stack_logging_mode_type;
-
 @interface KcHeapObjcManager : NSObject
 
 + (NSArray<id> *)instancesOfClass:(Class)cls;
@@ -42,14 +33,6 @@ typedef enum {
 
 /// 堆对象的信息
 + (nullable NSString *)heapObjcInfoWithAddress:(uintptr_t)address;
-
-+ (BOOL)turn_on_stack_logging:(kc_stack_logging_mode_type)mode;
-
-+ (void)turn_off_stack_logging;
-
-/// 获取地址的初始化堆栈
-/// 这个需要打开 malloc stack logging - all allocation
-+ (NSArray<NSString *> *)traceAddress:(mach_vm_address_t)addr;
 
 @end
 

@@ -12,11 +12,6 @@
 #import "KcMatchObjcInternal.h"
 #import <dlfcn.h>
 
-extern boolean_t turn_on_stack_logging(kc_stack_logging_mode_type mode);
-extern void turn_off_stack_logging(void);
-
-extern kern_return_t __mach_stack_logging_get_frames(task_t task, mach_vm_address_t address, mach_vm_address_t *stack_frames_buffer, uint32_t max_stack_frames, uint32_t *count);
-
 static CFMutableSetRef registeredClasses;
 
 // Mimics the objective-c object structure for checking if a range of memory is an object.
@@ -100,7 +95,7 @@ static void range_callback(task_t task, void *context, unsigned type, vm_range_t
 
 + (NSArray<id> *)instancesOfAllClass:(Class)cls {
     NSArray<Class> *classes = [self getAllSubclasses:cls includeSelf:true];
-    return [self instancesOfClasses:@[cls]];
+    return [self instancesOfClasses:classes];
 }
 
 + (NSArray<id> *)subclassesOfClassWithName:(NSString *)className {
@@ -283,63 +278,6 @@ static void range_callback(task_t task, void *context, unsigned type, vm_range_t
     if (malloc_zone_from_ptr(ptr)) {
         return [NSString stringWithFormat:@"%p heap pointer, (0x%zx bytes), zone: %p", ptr, (size_t)malloc_good_size((size_t)malloc_size(ptr)), (void*)malloc_zone_from_ptr(ptr)];
     } else {
-        return nil;
-    }
-}
-
-+ (BOOL)turn_on_stack_logging:(kc_stack_logging_mode_type)mode {
-    return turn_on_stack_logging(mode);
-}
-
-+ (void)turn_off_stack_logging {
-    turn_off_stack_logging();
-}
-
-typedef struct KcLLDBStackAddress {
-  mach_vm_address_t *addresses;
-  uint32_t count;
-} KcLLDBStackAddress;   // 1
-
-/// 获取地址的初始化堆栈
-/// 这个需要打开 malloc stack logging - all allocation
-+ (NSArray<NSString *> *)traceAddress:(mach_vm_address_t)addr {
-    KcLLDBStackAddress stackaddress; // 2
-    __unused mach_vm_address_t address = (mach_vm_address_t)addr;
-    __unused task_t task = mach_task_self_;  // 3
-    stackaddress.count = 0;
-    stackaddress.addresses = (mach_vm_address_t *)calloc(100, sizeof(mach_vm_address_t));
-  
-    kern_return_t err = __mach_stack_logging_get_frames(task,
-                                                        address,
-                                                        stackaddress.addresses,
-                                                        100,
-                                                        &stackaddress.count); // 5
-    if (err == 0) {
-        
-        NSMutableArray<NSString *> *symbols = [[NSMutableArray alloc] init];
-        
-        for (int i = 0; i < stackaddress.count; i++) {
-//            printf("[%d] %llu\n", i, stackaddress.addresses[i]);
-            
-            vm_address_t addr = stackaddress.addresses[i];
-            Dl_info info;
-            dladdr((void *)addr, &info);
-            
-            NSString *moduleName = [@(info.dli_fname) lastPathComponent];
-            
-            NSString *symbol = [NSString stringWithFormat:@"frame #%d : 0x%llx %@`%s + %ld", i, stackaddress.addresses[i], moduleName, info.dli_sname, addr - (uintptr_t)info.dli_saddr];
-            
-            [symbols addObject:symbol];
-        }
-        
-        free(stackaddress.addresses); // 7
-        stackaddress.addresses = nil;
-        
-        return symbols;
-    } else {
-        free(stackaddress.addresses); // 7
-        stackaddress.addresses = nil;
-        
         return nil;
     }
 }
