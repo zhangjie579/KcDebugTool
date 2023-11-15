@@ -3,7 +3,7 @@
 //  Pods
 //
 //  Created by 张杰 on 2023/9/9.
-//
+//  查考 KSCrash - KSThread
 
 #import <Foundation/Foundation.h>
 
@@ -44,7 +44,7 @@ NS_ASSUME_NONNULL_BEGIN
  */
 + (bool)getThreadName:(const thread_t)thread buffer:(char *)buffer bufLength:(int)bufLength;
 
-+ (uintptr_t)thread_self;
++ (thread_t)thread_self;
 
 @end
 

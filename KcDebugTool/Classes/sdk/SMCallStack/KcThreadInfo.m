@@ -14,7 +14,7 @@
 
 /// 获取当前线程id
 + (uint64_t)currentThreadID {
-    return [self threadIDWithThread:mach_thread_self()];
+    return [self threadIDWithThread:[self thread_self]];
 }
 
 /// 获取当前线程id, thread_t currentThread = mach_thread_self();
@@ -71,11 +71,21 @@
     return pthread_getname_np(pthread, buffer, (unsigned)bufLength) == 0;
 }
 
-+ (uintptr_t)thread_self {
++ (thread_t)thread_self {
     // 一个“反问”引发的内存反思：https://blog.csdn.net/killer1989/article/details/106674973
+    // https://juejin.cn/post/7249527617551138875?utm_source=gold_browser_extension
     thread_t thread_self = mach_thread_self();
     mach_port_deallocate(mach_task_self(), thread_self);
     return thread_self;
+}
+
++ (thread_t)pthread_self {
+    /*
+     https://codereview.chromium.org/276043002/
+     
+     不推荐使用mach_thread_self()，原因是需要mach_port_deallocate()配对释放，而使用pthread_mach_thread_np(pthread_self())调用时线程池的缓存，不需要mach_port_deallocate()进行释放，同时，配对使用mach_thread_self()和mach_port_deallocate()进行两次系统调用，而pthread_mach_thread_np(pthread_self())只是调用了两次libc function，更加轻量。
+     */
+    return pthread_mach_thread_np(pthread_self());
 }
 
 @end

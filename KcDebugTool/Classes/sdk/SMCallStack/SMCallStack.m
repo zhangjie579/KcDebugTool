@@ -43,6 +43,7 @@ static mach_port_t _smMainThreadId;
 
 + (void)load {
     _smMainThreadId = mach_thread_self();
+    mach_port_deallocate(mach_task_self(), _smMainThreadId);
 }
 
 #pragma mark - Interface
@@ -84,7 +85,9 @@ static mach_port_t _smMainThreadId;
             
             // 过滤当前线程
             // mach_thread_self() 不能存, 会一直变的⚠️
-            if (isFilterCurrentThread && thread != 0 && thread == mach_thread_self()) {
+            thread_t thread_self = mach_thread_self();
+            mach_port_deallocate(mach_task_self(), thread_self);
+            if (isFilterCurrentThread && thread != 0 && thread == thread_self) {
                 continue;
             }
                       
@@ -161,7 +164,9 @@ static mach_port_t _smMainThreadId;
             }
         }
         [nsthread setName:originName];
-        ThreadInfoObjc *info = smStackOfThreadInfo(mach_thread_self());
+        thread_t thread_self = mach_thread_self();
+        mach_port_deallocate(mach_task_self(), thread_self);
+        ThreadInfoObjc *info = smStackOfThreadInfo(thread_self);
         if (!isRunning || (isRunning && info.cpuUsage > 0)) {
             reStr = info.desc;
         } else {
