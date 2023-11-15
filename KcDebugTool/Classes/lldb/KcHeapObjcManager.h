@@ -31,8 +31,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// 是否是堆对象
 + (BOOL)isHeapAddress:(uintptr_t)address;
 
-/// 堆对象的信息
+/// 堆对象的信息 - expr -l objc++ -O -- [KcHeapObjcManager heapObjcInfoWithAddress:0x000000010230e6d0]
 + (nullable NSString *)heapObjcInfoWithAddress:(uintptr_t)address;
+/// 读取内存，获取堆上的信息 (address = *memory)
++ (nullable NSString *)heapObjcWithMemoryReadAddress:(uintptr_t)memory;
 
 @end
 

@@ -66,7 +66,7 @@ NS_ASSUME_NONNULL_BEGIN
 //bool isObjcObject(const void *inPtr, const Class *allClasses, int classCount);
 //static bool isObjcObject(const void *inPtr, const Class *allClasses, int classCount)
 
-+ (BOOL)isObjcObject:(const void *)inPtr registeredClasses:(CFMutableSetRef)registeredClasses;
++ (BOOL)isObjcObject:(const void *)inPtr registeredClasses:(nullable CFMutableSetRef)registeredClasses;
 
 
 /// Accepts addresses that may or may not be readable.

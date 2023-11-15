@@ -276,10 +276,28 @@ static void range_callback(task_t task, void *context, unsigned type, vm_range_t
 + (nullable NSString *)heapObjcInfoWithAddress:(uintptr_t)address {
     void *ptr = (void *)address;
     if (malloc_zone_from_ptr(ptr)) {
-        return [NSString stringWithFormat:@"%p heap pointer, (0x%zx bytes), zone: %p", ptr, (size_t)malloc_good_size((size_t)malloc_size(ptr)), (void*)malloc_zone_from_ptr(ptr)];
+        if ([KcMatchObjcInternal isObjcObject:ptr registeredClasses:nil]) {
+            NSObject *objc = (__bridge NSObject *)ptr;
+            
+            if ([objc isKindOfClass:[CALayer class]]) {
+                CALayer *layer = (CALayer *)objc;
+                return [NSString stringWithFormat:@"layerDelegate: %@, layer: %@", layer.delegate, layer];
+            } else {
+                return [NSString stringWithFormat:@"objc: %@", objc];
+            }
+            
+        } else {
+            return [NSString stringWithFormat:@"%p heap pointer, (0x%zx bytes), zone: %p", ptr, (size_t)malloc_good_size((size_t)malloc_size(ptr)), (void*)malloc_zone_from_ptr(ptr)];
+        }
     } else {
         return nil;
     }
+}
+
+/// 读取内存，获取堆上的信息
++ (nullable NSString *)heapObjcWithMemoryReadAddress:(uintptr_t)memory {
+    void *address = *(void **)memory;
+    return [self heapObjcInfoWithAddress:(uintptr_t)address];
 }
 
 @end

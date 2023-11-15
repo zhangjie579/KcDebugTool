@@ -47,8 +47,12 @@ typedef enum {
     * dealloc跟alloc一样也是同样的问题
  4、__mach_stack_logging_enumerate_records接口，传入的回调函数，不知道有多少个匹配stack，这就导致使用效率很低，因为存在很多次分配释放内存
     * 取巧做法: 调用2次__mach_stack_logging_enumerate_records方法，第一次在回调函数中记录count数量，第2次根据count判断才取值；可__mach_stack_logging_enumerate_records存在file读的问题，可能调用2次性能更差。
+ 
+ 使用说明🐶🐶🐶:
+ 1、观察dealloc - 开启xcode的zombie objects使用。就能准确观察到dealloc
+    * 因为zombie objects观察野指针, 原理是最后不调用free, 那么这块内存就一直不会被其他重复使用, 那么dealloc就一定是最后一个的堆栈, 一定是准确的
  */
-//- (nullable NSArray<NSString *> *)enumerateMallocStackLoggingRecordsTraceAddress:(uintptr_t)address isAlloc:(BOOL)isAlloc;
+- (nullable NSArray<NSString *> *)enumerateMallocStackLoggingRecordsTraceAddress:(uintptr_t)address isAlloc:(BOOL)isAlloc;
 
 @end
 

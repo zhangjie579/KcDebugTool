@@ -53,7 +53,7 @@ BOOL _class_isSwift(Class _Nullable cls);
 //bool isObjcObject(const void *inPtr, const Class *allClasses, int classCount);
 //static bool isObjcObject(const void *inPtr, const Class *allClasses, int classCount)
 
-+ (BOOL)isObjcObject:(const void *)inPtr registeredClasses:(CFMutableSetRef)registeredClasses {
++ (BOOL)isObjcObject:(const void *)inPtr registeredClasses:(nullable CFMutableSetRef)registeredClasses {
     //
     // NULL pointer is not an Objective-C object
     //
@@ -161,13 +161,15 @@ BOOL _class_isSwift(Class _Nullable cls);
     //
     // Verifies that the found Class is a known class.
     //
-    bool isKnownClass = false;
-    if (CFSetContainsValue(registeredClasses, (__bridge const void *)(ptrClass))) {
-        isKnownClass = true;
-    }
+    if (registeredClasses != nil) {
+        bool isKnownClass = false;
+        if (CFSetContainsValue(registeredClasses, (__bridge const void *)(ptrClass))) {
+            isKnownClass = true;
+        }
 
-    if (!isKnownClass) {
-        return false;
+        if (!isKnownClass) {
+            return false;
+        }
     }
 
     //
