@@ -110,10 +110,15 @@ TODO: Add long description of the pod here.
       ss.frameworks = 'UIKit'
   end
   
-#  s.subspec 'MrcUtil' do |ss|
-#      ss.requires_arc = false # 默认为MRC
-#      ss.source_files = 'KcDebugTool/Classes/mrc/**/*'
-#  end
+  s.subspec 'zombieTool' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/zombieTool/**/*'
+  end
+  
+  s.subspec 'zombieMRC' do |ss|
+      ss.requires_arc = false # 默认为MRC
+      ss.source_files = 'KcDebugTool/Classes/zombieMRC/**/*'
+      ss.dependency 'KcDebugTool/zombieTool'
+  end
   
   # MARK: - Zombie 野指针
   # s.subspec 'Zombie' do |ss|
