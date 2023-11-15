@@ -232,7 +232,7 @@ static void handle_malloc_observer(uintptr_t memorySize) {
 }
 
 /// 内存阈值
-static inline uintptr_t thresholdSizeOfBigMemory() {
+static inline uintptr_t thresholdSizeOfBigMemory(void) {
     return 4 * 1024 * 1024;
 }
 
@@ -247,7 +247,7 @@ static bool isPaused = false;
     malloc_logger = (malloc_logger_t *)kc_hook_malloc_stack_logger;
     
 #ifdef KC_USE_PRIVATE_API
-    // __syscall_logger
+    // __syscall_logger - 这个是vm
     syscall_logger = (malloc_logger_t **)dlsym(RTLD_DEFAULT, "__syscall_logger");
     if (syscall_logger != NULL) {
         *syscall_logger = kc_hook_malloc_stack_logger;
