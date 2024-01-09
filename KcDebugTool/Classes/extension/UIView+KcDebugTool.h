@@ -54,6 +54,26 @@ NS_ASSUME_NONNULL_BEGIN
 /// 查找属性信息
 - (nullable KcPropertyResult *)propertyInfoWithIsLog:(BOOL)isLog;
 
+#pragma mark - 查找方法
+
+/// 查找keyPath的值为value的所有祖先
+/// - Parameters:
+///   - value: keyPath的值
+///   - keyPath: keyPath
+- (NSArray<id> *)kc_findAncestorViewValue:(id)value keyPath:(NSString *)keyPath;
+
+/// 查找并输出keyPath的值为value的所有祖先
+/// - Parameters:
+///   - value: keyPath的值
+///   - keyPath: keyPath
+- (NSString *)kc_log_findAncestorViewValue:(id)value keyPath:(NSString *)keyPath;
+
+/// 查找keyPath的值为value的所有祖先
+/// - Parameters:
+///   - value: 对应的值
+///   - selectorName: 方法名
+- (NSArray<id> *)kc_findAncestorViewValue:(id)value selectorName:(NSString *)selectorName;
+
 @end
 
 NS_ASSUME_NONNULL_END

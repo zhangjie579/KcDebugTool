@@ -190,4 +190,83 @@
     }
 }
 
+#pragma mark - 查找方法
+
+/// 查找keyPath的值为value的所有祖先
+/// - Parameters:
+///   - value: keyPath的值
+///   - keyPath: keyPath
+- (NSArray<id> *)kc_findAncestorViewValue:(id)value keyPath:(NSString *)keyPath {
+    return [self kc_findAncestorViewValue:value valueBlock:^id(UIView *view) {
+        return [view valueForKeyPath:keyPath];
+    }];
+}
+
+/// 查找并输出keyPath的值为value的所有祖先
+/// - Parameters:
+///   - value: keyPath的值
+///   - keyPath: keyPath
+- (NSString *)kc_log_findAncestorViewValue:(id)value keyPath:(NSString *)keyPath {
+    NSArray<id> *ancestors = [self kc_findAncestorViewValue:value keyPath:keyPath];
+    
+    NSMutableString *log_str = [NSMutableString stringWithString:@""];
+    for (id objc in ancestors) {
+        [log_str appendFormat:@"%@\n", [KcLogParamModel instanceDesc:objc]];
+    }
+    
+    [KcLogParamModel logWithKey:@"🐶 查找keyPath的值为value的所有祖先, 从下往上排列 🐶" format:@"%@", log_str];
+    
+    return log_str;
+}
+
+/// 查找keyPath的值为value的所有祖先
+/// - Parameters:
+///   - value: 对应的值
+///   - selectorName: 方法名
+- (NSArray<id> *)kc_findAncestorViewValue:(id)value selectorName:(NSString *)selectorName {
+    return [self kc_findAncestorViewValue:value valueBlock:^id(UIView *view) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        return [view performSelector:NSSelectorFromString(selectorName)];
+#pragma clang diagnostic pop
+    }];
+}
+
+/// 查找祖先的某些值为value
+/// - Parameters:
+///   - value: 值
+///   - valueBlock: 获取值的方式
+- (NSArray<id> *)kc_findAncestorViewValue:(id)value valueBlock:(id(^)(UIView *))valueBlock {
+    // 这里用superview而不是nextResponder, 因为nextResponder可能为UIViewController, view有的属性它不一定有⚠️
+    UIView *_Nullable superview = self.superview;
+    
+    NSString *_Nullable valueStr = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+        valueStr = (NSString *)value;
+    } else if ([value isKindOfClass:[NSNumber class]]) {
+        valueStr = [value stringValue];
+    }
+    
+    // 祖先
+    NSMutableArray<id> *ancestors = [[NSMutableArray alloc] init];
+    
+    while (superview) {
+        id objc = valueBlock(superview);
+        
+        if (valueStr != nil) {
+            if ([objc isKindOfClass:[NSString class]] && [objc isEqualToString:valueStr]) {
+                [ancestors addObject:superview];
+            } else if ([objc isKindOfClass:[NSNumber class]] && [[objc stringValue] isEqualToString:valueStr]) {
+                [ancestors addObject:superview];
+            }
+        } else if ([objc isEqual:value]) {
+            [ancestors addObject:superview];
+        }
+        
+        superview = superview.superview;
+    }
+    
+    return ancestors;
+}
+
 @end
