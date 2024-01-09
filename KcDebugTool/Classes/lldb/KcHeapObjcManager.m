@@ -282,6 +282,8 @@ static void range_callback(task_t task, void *context, unsigned type, vm_range_t
             if ([objc isKindOfClass:[CALayer class]]) {
                 CALayer *layer = (CALayer *)objc;
                 return [NSString stringWithFormat:@"layerDelegate: %@, layer: %@", layer.delegate, layer];
+            } else if (object_isClass(objc)) {
+                return [NSString stringWithFormat:@"class: %@", objc];
             } else {
                 return [NSString stringWithFormat:@"objc: %@", objc];
             }
