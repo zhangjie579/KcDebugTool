@@ -392,7 +392,7 @@
             kc_nlist_t entries = symtab[i];
             // 符号表中的偏移量offset
             // 因为symtab的地址 + slide, so 同MachOView一致, 这里 - slide
-            UInt64 entriesAddress = (UInt64)symtab - slide + sizeof(kc_nlist_t) * i;
+            UInt64 entriesAddress = ((UInt64)symtab - slide) + sizeof(kc_nlist_t) * i;
             
             char *symbol_name = strtab + entries.n_un.n_strx;
             /* 真实地址需要加slide⚠️
@@ -404,10 +404,10 @@
              
              slide = header - seg_text->vmaddr
              */
-            UInt64 symbol_address = entries.n_value;
+            UInt64 symbol_address_no_slide = entries.n_value;
             
             // 符号的真实地址
-            uintptr_t symbol_real_address = symbol_address + slide;
+            uintptr_t symbol_real_address = symbol_address_no_slide + slide;
             
             // 测试动态调用方法👻
 //            if (strcmp(symbol_name, "+[KCViewController kc_test]") == 0) {
@@ -416,9 +416,9 @@
 //            }
             
             // 用%llx, 会加上simulateBaseAddress的值(0x1 + 8个0)
-            NSLog(@"name: %s, value: 0x%llx, 真实符号地址: 0x%lx element offset: 0x%llx",
+            NSLog(@"name: %s, value(无slide): 0x%llx, 真实符号地址: 0x%lx element offset: 0x%llx",
                   symbol_name,
-                  symbol_address,
+                  symbol_address_no_slide,
                   symbol_real_address - simulateBaseAddress,
                   entriesAddress - simulateBaseAddress);
         }
