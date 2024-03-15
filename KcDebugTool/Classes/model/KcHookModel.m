@@ -242,6 +242,58 @@ static void(^kc_gInfoLogBeforeBlock)(NSString *);
     return [KCSwiftMeta demangleWithSymbol:(const int8_t *)cstring];
 }
 
+/// 堆栈, 将swift符号 demangle了
++ (nullable NSString *)callStack {
+    NSArray<NSString *> *callStackSymbols = [NSThread callStackSymbols];
+    if (callStackSymbols.count == 0) {
+        return nil;
+    }
+    
+    NSMutableArray<NSString *> *(^decodeStack)(NSString *stack) = ^NSMutableArray<NSString *> *(NSString *stack) {
+        NSMutableArray<NSString *> *values = [[NSMutableArray alloc] init];
+        
+        
+        NSMutableString *value = [NSMutableString string];
+        
+        for (NSInteger i = 0; i < stack.length; i++) {
+            NSString *str = [stack substringWithRange:NSMakeRange(i, 1)];
+            
+            if ([str isEqualToString:@" "]) {
+                if (value.length > 0) {
+                    [values addObject:value.copy];
+                    
+                    value = [NSMutableString string];
+                }
+            } else {
+                [value appendString:str];
+            }
+        }
+        
+        if (value.length > 0) {
+            [values addObject:value.copy];
+        }
+        
+        return values;
+    };
+    
+    NSMutableString *mutableString = [NSMutableString string];
+    
+    for (NSString *stack in callStackSymbols) {
+        NSMutableArray<NSString *> *stacks = decodeStack(stack);
+        if (stacks.count >= 6 && [stacks[3] hasPrefix:@"$"]) {
+            NSString *swiftSymbol = stacks[3];
+            NSString *demangleName = [KCSwiftMeta demangleName:swiftSymbol];
+            
+            stacks[3] = demangleName;
+        }
+        
+        [mutableString appendString:[stacks componentsJoinedByString:@" "]];
+        [mutableString appendString:@"\n"];
+    }
+    
+    return mutableString;
+}
+
 @end
 
 @implementation KcHookInfo

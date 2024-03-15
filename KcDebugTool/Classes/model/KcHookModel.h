@@ -70,6 +70,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// 解析name
 + (NSString *)demangleNameWithCString:(const char *)cstring;
 
+/// 堆栈, 将swift符号 demangle了
++ (nullable NSString *)callStack;
+
 @end
 
 /// 方法hook参数
