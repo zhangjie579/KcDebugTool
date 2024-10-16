@@ -269,4 +269,20 @@
     return ancestors;
 }
 
+#pragma mark - 颜色
+
+/// 是否亮色
++ (BOOL)kc_isLightColor:(UIColor *)color {
+    
+    CGFloat red, green, blue, alpha;
+    [color getRed:&red green:&green blue:&blue alpha:&alpha];
+    
+    // 通过 getRed 方法获取颜色的 RGB 分量
+    // 使用亮度公式计算亮度
+    double brightness = 0.299 * red + 0.587 * green + 0.114 * blue;
+    // 根据亮度判断颜色类型
+    return brightness >= 0.5;
+
+}
+
 @end

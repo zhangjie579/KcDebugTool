@@ -48,4 +48,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+@interface NSAttributedString (KcDebugTool)
+
+- (NSString *)kc_debug_textColor;
+
+- (NSString *)kc_debug_font;
+
+@end
+
 NS_ASSUME_NONNULL_END

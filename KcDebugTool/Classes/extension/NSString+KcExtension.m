@@ -7,6 +7,7 @@
 //
 
 #import "NSString+KcExtension.h"
+#import "UIColor+KcDebugTool.h"
 
 @implementation NSString (KcExtension)
 
@@ -112,6 +113,75 @@
         decodedStr = [decodedStr stringByRemovingPercentEncoding];
     }
     return decodedStr;
+}
+
+@end
+
+@implementation NSAttributedString (KcDebugTool)
+
+- (NSString *)kc_debug_textColor {
+//    NSFontAttributeName;
+//    NSForegroundColorAttributeName;
+//    [self enumerateAttributesInRange:NSMakeRange(0, self.length) options:0 usingBlock:^(NSDictionary<NSAttributedStringKey,id> * _Nonnull attrs, NSRange range, BOOL * _Nonnull stop) {
+//        UIColor *_Nullable color = attrs[NSForegroundColorAttributeName];
+//        //        UIFont *_Nullable font = attrs[NSFontAttributeName];
+//        
+//        if (!color) {
+//            return;
+//        }
+//        
+//    }];
+    
+    NSMutableString *resultString = [NSMutableString string];
+    
+    [self enumerateAttribute:NSForegroundColorAttributeName inRange:NSMakeRange(0, self.length) options:0 usingBlock:^(id  _Nullable value, NSRange range, BOOL * _Nonnull stop) {
+        if (![value isKindOfClass:[UIColor class]]) {
+            return;
+        }
+        NSString *subString = [self.string substringWithRange:range];
+        NSString *hexString = [value kc_hexString];
+        
+        [resultString appendFormat:@"[%@: %@] - ", subString, hexString];
+    }];
+    
+    if (resultString.length <= 0) {
+        return resultString;
+    }
+    
+    [resultString deleteCharactersInRange:NSMakeRange(resultString.length - 3, 3)];
+    
+    return resultString;
+}
+
+- (NSString *)kc_debug_font {
+    NSMutableString *resultString = [NSMutableString string];
+    
+    [self enumerateAttribute:NSFontAttributeName inRange:NSMakeRange(0, self.length) options:0 usingBlock:^(id  _Nullable value, NSRange range, BOOL * _Nonnull stop) {
+        if (![value isKindOfClass:[UIFont class]]) {
+            return;
+        }
+        
+        UIFont *font = (UIFont *)value;
+        
+//        // 获取字体名称
+//        let fontName = font.fontName
+//
+//        // 获取字体大小
+//        let fontSize = font.pointSize
+        
+        NSString *subString = [self.string substringWithRange:range];
+        NSString *fontDesc = [NSString stringWithFormat:@"%@:%.2f", font.fontName, font.pointSize];
+        
+        [resultString appendFormat:@"[%@: %@] - ", subString, fontDesc];
+    }];
+    
+    if (resultString.length <= 0) {
+        return resultString;
+    }
+    
+    [resultString deleteCharactersInRange:NSMakeRange(resultString.length - 3, 3)];
+    
+    return resultString;
 }
 
 @end

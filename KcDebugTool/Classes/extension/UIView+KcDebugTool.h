@@ -74,6 +74,11 @@ NS_ASSUME_NONNULL_BEGIN
 ///   - selectorName: 方法名
 - (NSArray<id> *)kc_findAncestorViewValue:(id)value selectorName:(NSString *)selectorName;
 
+#pragma mark - 颜色
+
+/// 是否亮色
++ (BOOL)kc_isLightColor:(UIColor *)color;
+
 @end
 
 NS_ASSUME_NONNULL_END
