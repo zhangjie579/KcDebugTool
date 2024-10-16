@@ -12,6 +12,11 @@
 #import <malloc/malloc.h>
 #import <mach-o/dyld.h>
 #import <mach/mach.h>
+#if __has_include("KcDebugTool/KcDebugTool-Swift.h")
+#import "KcDebugTool/KcDebugTool-Swift.h"
+#else
+#import "KcDebugTool-Swift.h"
+#endif
 
 #if __arm64__
 #define Kc_ISA_MASK        0x0000000ffffffff8ULL
@@ -32,6 +37,8 @@
 
 /// 是否是自定义的class
 bool kc_classIsCustomClass(Class aClass);
+
+#pragma mark - hook
 
 /// hook
 + (void)kc_hookSelectorName:(NSString *)selectorName swizzleSelectorName:(NSString *)swizzleSelectorName {
@@ -515,7 +522,45 @@ bool kc_classIsCustomClass(Class aClass);
     return observer;
 }
 
-#pragma mark - help
+#pragma mark - 类相关
+
++ (NSMutableArray<Class> *)kc_objcClassListWithRegularPattern:(nullable NSString *)pattern {
+    unsigned int outCount;
+    Class *classList = objc_copyClassList(&outCount);
+    
+    NSRegularExpression *_Nullable regular;
+    
+    if (pattern && pattern.length > 0) {
+        NSError *error = nil;
+        // caseInsensitive: 忽略大小写
+        regular = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive error:&error];
+    } else {
+        regular = nil;
+    }
+    
+    NSMutableArray<Class> *resultClasses = [[NSMutableArray alloc] init];
+    
+    for (unsigned int i = 0; i < outCount; i++) {
+        Class cls = classList[i];
+        NSString *clsName = NSStringFromClass(cls);
+        
+        clsName = [KCSwiftMeta demangleName:clsName];
+        
+        if (regular) {
+            NSTextCheckingResult *result = [regular firstMatchInString:clsName options:0 range:NSMakeRange(0, clsName.length)];
+            if (result != nil && result.range.location != NSNotFound && result.range.length > 0) {
+                [resultClasses addObject:cls];
+                NSLog(@"ss --- %@", clsName);
+            }
+        } else {
+            NSLog(@"ss --- %@", clsName);
+        }
+    }
+    
+    free(classList);
+    
+    return resultClasses;
+}
 
 /// 是否是元类
 + (BOOL)kc_isMetaClass:(id)object {
@@ -529,14 +574,28 @@ bool kc_classIsCustomClass(Class aClass);
 
 /// 是否是swift class (不包括值类型struct、enum)
 + (BOOL)kc_isSwiftClass:(id)objc {
-    NSString *className = NSStringFromClass([objc class]);
-    if (!className) {
-        return YES;
+    Class cls = [objc class];
+    
+    while (cls) {
+        NSString *className = NSStringFromClass(cls);
+        if (!className) {
+            return YES;
+        }
+        
+        // _TtGC7RxCocoa13GestureTargetCSo22UITapGestureRecognizer_  这种情况没有处理⚠️
+        BOOL isSwiftClass = [className containsString:@"."];
+        if (isSwiftClass) {
+            return true;
+        }
+        
+        if ([className containsString:@"SwiftObject"]) {
+            return true;
+        }
+        
+        cls = [cls superclass];
     }
     
-    // _TtGC7RxCocoa13GestureTargetCSo22UITapGestureRecognizer_  这种情况没有处理⚠️
-    BOOL isSwiftClass = [className containsString:@"."];
-    return isSwiftClass;
+    return false;
 }
 
 /// 是否是swift值类型
@@ -565,6 +624,24 @@ bool kc_classIsCustomClass(Class aClass);
     }
     
     return NO;
+}
+
+/// 是否是NSObject的子类
++ (BOOL)kc_isNSObjectSubClass:(Class)cls {
+    
+    Class superCls = [cls superclass];
+    
+    while (superCls) {
+        NSString *name = NSStringFromClass(superCls);
+        
+        if ([name isEqualToString:@"NSObject"]) {
+            return true;
+        }
+        
+        superCls = [superCls superclass];
+    }
+    
+    return false;
 }
 
 /// 是否是自定义的class

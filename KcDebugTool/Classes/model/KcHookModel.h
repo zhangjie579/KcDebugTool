@@ -42,6 +42,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// 是否log类名(父类和子类确定不了)
 @property (nonatomic) BOOL       isLogClassName;
 
+/// 是否log参数
+@property (nonatomic) BOOL       isLogArguments;
+
 // --- 过滤高频
 
 /// 过滤高频log

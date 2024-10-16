@@ -127,12 +127,15 @@ static void(^kc_gInfoLogBeforeBlock)(NSString *);
     
     NSString *(^methodDescriptionLog)(void) = ^NSString * {
         NSString *selectorName = info.selectorNameFilterPrefix;
+        
+        NSString *arguments = self.isLogArguments ? [NSString stringWithFormat:@", 参数: %@", info.arguments.description ?: @""] : @"";
+        
         if (self.isLogTarget) {
-            return [NSString stringWithFormat:@"%@.%@", info.instance, selectorName];
+            return [NSString stringWithFormat:@"%@.%@%@", info.instance, selectorName, arguments];
         } else if (self.isLogClassName) {
-            return [NSString stringWithFormat:@"%@.%@", info.className, selectorName];
+            return [NSString stringWithFormat:@"%@.%@%@", info.className, selectorName, arguments];
         } else {
-            return [NSString stringWithFormat:@"%@", info.selectorName];
+            return [NSString stringWithFormat:@"%@%@", info.selectorName, arguments];
         }
     };
     

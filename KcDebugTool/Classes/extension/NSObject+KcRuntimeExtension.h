@@ -92,7 +92,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (KcDeallocObserver *)kc_deallocObserverWithBlock:(void(^)(void))block;
 
 
-#pragma mark - help
+#pragma mark - 类相关
+
++ (NSMutableArray<Class> *)kc_objcClassListWithRegularPattern:(nullable NSString *)pattern;
 
 /// 是否是元类
 + (BOOL)kc_isMetaClass:(id)object;
@@ -105,6 +107,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// 是否是swift 对象
 /// 注意⚠️: 不管是swift struct还是class强转NSObject都success
 + (BOOL)kc_isSwiftObjc:(id)objc;
+
+/// 是否是NSObject的子类
++ (BOOL)kc_isNSObjectSubClass:(Class)cls;
+
 /// 是否是自定义的class
 + (BOOL)kc_isCustomClass:(Class)cls;
 

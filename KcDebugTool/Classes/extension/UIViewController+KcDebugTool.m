@@ -198,7 +198,7 @@
                                      selector:NSSelectorFromString(selectorName)
                                   withOptions:KcAspectTypeBefore
                                    usingBlock:^(KcHookAspectInfo * _Nonnull info) {
-                [KcLogParamModel logWithKey:@"生命周期" format:@"[%@ %@] - %@ ", info.class, info.selectorName, info.instance];
+                [KcLogParamModel logWithKey:@"生命周期" format:@"[%@ %@] - %@ ", [info.instance class], info.selectorName, info.instance];
                 if (block) {
                     block(info);
                 }
