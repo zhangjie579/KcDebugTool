@@ -41,6 +41,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// hook initWithNibName
 + (void)kc_hook_initWithNibNameWithBlock:(void(^_Nullable)(KcHookAspectInfo * _Nonnull info))block;
 
+#pragma mark - add、remove
+
+/// 添加移除viewController
++ (void)kc_hook_addRemoveViewController;
+
+#pragma mark - tabbar
+
+/// 检查tabbar的问题
++ (void)kc_hook_checkTabbar;
+
 @end
 
 /// 导航栏

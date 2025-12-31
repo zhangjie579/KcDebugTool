@@ -92,6 +92,14 @@
         BOOL isLandscape = UIDeviceOrientationIsLandscape(orientation);
         [KcLogParamModel logWithKey:@"横竖屏" format:@"UIDevice.orientation: %d, isLandscape: %d", orientation, isLandscape];
     } error:nil];
+    
+    // - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id <UIViewControllerTransitionCoordinator>)coordinator
+    [tool kc_hookWithObjc:UIViewController.class
+                 selector:@selector(viewWillTransitionToSize:withTransitionCoordinator:)
+              withOptions:KcAspectTypeBefore
+               usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [KcLogParamModel logWithKey:@"横竖屏" format:@"%@: %@", info.selectorName, info.instance];
+    } error:nil];
 }
 
 /// 跳转方法
@@ -234,6 +242,74 @@
         if (block) {
             block(info);
         }
+    } error:nil];
+}
+
+#pragma mark - add、remove
+
+/// 添加移除viewController
++ (void)kc_hook_addRemoveViewController {
+    
+    /*
+     - (void)addChildViewController:(UIViewController *)childController API_AVAILABLE(ios(5.0));
+
+     - (void)removeFromParentViewController
+     */
+    [self.kc_hookTool kc_hookWithObjc:[UIViewController class]
+                             selector:@selector(addChildViewController:)
+                          withOptions:KcAspectTypeBefore
+                           usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [KcLogParamModel logWithKey:@"addChildViewController" format:@"%@", info.arguments.firstObject];
+    } error:nil];
+    
+    [self.kc_hookTool kc_hookWithObjc:[UIViewController class]
+                             selector:@selector(removeFromParentViewController)
+                          withOptions:KcAspectTypeBefore
+                           usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        [KcLogParamModel logWithKey:@"removeFromParentViewController" format:@"%@", info.instance];
+    } error:nil];
+}
+
+#pragma mark - tabbar
+
+/// 检查tabbar的问题
++ (void)kc_hook_checkTabbar {
+    [NSObject.kc_hookTool kc_hookWithObjc:UIView.class selector:@selector(setAlpha:) withOptions:KcAspectTypeAfter usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        UIView *_Nullable view = info.instance;
+
+        if (view == nil || [view isEqual:[NSNull null]] || ![view isKindOfClass:[UITabBar class]]) {
+            return;
+        }
+
+        float alpha = [info.arguments.firstObject floatValue];
+
+        [KcLogParamModel logWithKey:@"tabbar" format:@"%@, alpha: %f", info.instance, alpha];
+    } error:nil];
+        
+    [NSObject.kc_hookTool kc_hookWithObjc:UIView.class selector:@selector(setHidden:) withOptions:KcAspectTypeAfter usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        UIView *_Nullable view = info.instance;
+
+        if (view == nil || [view isEqual:[NSNull null]] || ![view isKindOfClass:[UITabBar class]]) {
+            return;
+        }
+        
+        BOOL hidden = [info.arguments.firstObject boolValue];
+        
+        [KcLogParamModel logWithKey:@"tabbar" format:@"%@, hidden: %d", info.instance, hidden];
+    } error:nil];
+    
+    [NSObject.kc_hookTool kc_hookWithObjc:UIViewController.class selector:@selector(setHidesBottomBarWhenPushed:) withOptions:KcAspectTypeAfter usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        UIView *_Nullable view = info.instance;
+
+        if (view == nil || [view isEqual:[NSNull null]]) {
+            return;
+        }
+        
+        BOOL hidesBottomBarWhenPushed = [info.arguments.firstObject boolValue];
+        
+//        NSString *className = NSStringFromClass([info.instance class]);
+        
+        [KcLogParamModel logWithKey:@"tabbar" format:@"%@, hidesBottomBarWhenPushed: %d", info.instance, hidesBottomBarWhenPushed];
     } error:nil];
 }
 
