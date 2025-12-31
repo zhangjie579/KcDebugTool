@@ -74,10 +74,28 @@ NS_ASSUME_NONNULL_BEGIN
 ///   - selectorName: 方法名
 - (NSArray<id> *)kc_findAncestorViewValue:(id)value selectorName:(NSString *)selectorName;
 
+/// 查找所有祖先keyPath的值
+- (NSArray<NSString *> *)kc_findAncestorViewKeyPath:(NSString *)keyPath;
+
 #pragma mark - 颜色
 
 /// 是否亮色
 + (BOOL)kc_isLightColor:(UIColor *)color;
+
+#pragma mark - 检查
+
+/// 不能响应事件的原因
+- (BOOL)kc_checkHitTestQuestion;
+
+/// 查找圆角的问题
+- (NSMutableArray<NSString *> *)kc_findCornerRadiusQuestion;
+
+/// 检查不可见的原因
+- (BOOL)kc_checkInvisibleQuestion;
+
+#pragma mark - hitTest
+
++ (void)kc_hookHitTest;
 
 @end
 
