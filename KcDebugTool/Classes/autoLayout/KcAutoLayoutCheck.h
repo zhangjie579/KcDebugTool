@@ -44,6 +44,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// check 异常
 + (void)checkException;
 
+/// 观察布局约束
+/// 使用场景: 看看到底是哪里设置了这个布局, 需要写在设置布局的前面, 相当于声明式
++ (void)observerLayoutConstraintWithFirstItem:(nullable id)firstItem
+                               firstAttribute:(NSLayoutAttribute)firstAttribute
+                                   secondItem:(nullable id)secondItem
+                              secondAttribute:(NSLayoutAttribute)secondAttribute
+                                     relation:(NSLayoutRelation)relation
+                                     constant:(CGFloat)constant
+                                    findBlock:(void(^)(void))block;
+
 @end
 
 NS_ASSUME_NONNULL_END

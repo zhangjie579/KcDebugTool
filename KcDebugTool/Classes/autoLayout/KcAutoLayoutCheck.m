@@ -11,6 +11,14 @@
 #import <objc/message.h>
 @import KcDebugSwift;
 
+//@interface NSLayoutConstraint (KcLayoutCheck)
+//
+//+ (instancetype)kc_hook_constraintWithItem:(id)view1 attribute:(NSLayoutAttribute)attr1 relatedBy:(NSLayoutRelation)relation toItem:(id)view2 attribute:(NSLayoutAttribute)attr2 multiplier:(CGFloat)multiplier constant:(CGFloat)c;
+//
+//+ (void)kc_addLayoutCheck:(void (^)(id view1, NSLayoutAttribute attr1, NSLayoutRelation relation, id view2, NSLayoutAttribute attr2, CGFloat multiplier, CGFloat constant))layoutCheck;
+//
+//@end
+
 @interface KcAutoLayoutCheck ()
 
 @end
@@ -329,4 +337,159 @@ static BOOL(^gCheckMissMaxLayoutIMP)(UIView *, UILayoutConstraintAxis);
 //    }
 }
 
+/// 观察布局约束
++ (void)observerLayoutConstraintWithFirstItem:(nullable id)firstItem
+                               firstAttribute:(NSLayoutAttribute)firstAttribute
+                                   secondItem:(nullable id)secondItem
+                              secondAttribute:(NSLayoutAttribute)secondAttribute
+                                     relation:(NSLayoutRelation)relation
+                                     constant:(CGFloat)constant
+                                    findBlock:(void(^)(void))block {
+    /* setActive
+     + NSLayoutConstraint.activate(layoutConstraints)
+     + [NSLayoutConstraint _addOrRemoveConstraints:activate:]
+     */
+    [KcHookTool.manager kc_hookWithObjc:NSLayoutConstraint.class selector:@selector(setActive:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        NSLayoutConstraint * _Nullable constraint = info.instance;
+        BOOL isActive = [info.arguments.firstObject boolValue];
+        
+        if (!constraint || !isActive) {
+            return;
+        }
+        
+        // 检查 constant
+        if (constraint.constant != constant || relation != constraint.relation) {
+            return;
+        }
+        
+        // 检查 firstAttribute、secondAttribute
+        if (firstAttribute != constraint.firstAttribute || secondAttribute != constraint.secondAttribute) {
+            return;
+        }
+        
+        BOOL firstItemEqual = firstItem && constraint.firstItem && [firstItem isEqual:constraint.firstItem];
+        if (!firstItemEqual) {
+            return;
+        }
+        
+        BOOL secondItemEqual = false;
+        
+        if (secondItem && constraint.secondItem && [secondItem isEqual:constraint.secondItem]) {
+            secondItemEqual = true;
+        } else if (!secondItem && !constraint.secondItem) {
+            secondItemEqual = true;
+        }
+        
+        if (!secondItemEqual) {
+            return;
+        }
+        
+        NSLog(@"✅ 找到了autoLayout");
+        
+        if (block) {
+            block();
+        }
+    } error:nil];
+    
+    // setConstant
+    [KcHookTool.manager kc_hookWithObjc:NSLayoutConstraint.class selector:@selector(setConstant:) withOptions:KcAspectTypeBefore usingBlock:^(KcHookAspectInfo * _Nonnull info) {
+        NSLayoutConstraint * _Nullable constraint = info.instance;
+        CGFloat _constant = [info.arguments.firstObject doubleValue];
+        
+        if (!constraint) {
+            return;
+        }
+        
+        // 检查 constant
+        if (_constant != constant || relation != constraint.relation) {
+            return;
+        }
+        
+        // 检查 firstAttribute、secondAttribute
+        if (firstAttribute != constraint.firstAttribute || secondAttribute != constraint.secondAttribute) {
+            return;
+        }
+        
+        BOOL firstItemEqual = firstItem && constraint.firstItem && [firstItem isEqual:constraint.firstItem];
+        BOOL secondItemEqual = secondItem && constraint.secondItem && [secondItem isEqual:constraint.secondItem];
+        
+        if (!firstItemEqual || !secondItemEqual) {
+            return;
+        }
+        
+        NSLog(@"✅ 找到了autoLayout");
+        
+        if (block) {
+            block();
+        }
+    } error:nil];
+    
+    // NSLayoutConstraint.__allocating_init(item:attribute:relatedBy:toItem:attribute:multiplier:constant:)
+    // + (instancetype)constraintWithItem:(id)view1 attribute:(NSLayoutAttribute)attr1 relatedBy:(NSLayoutRelation)relation toItem:(nullable id)view2 attribute:(NSLayoutAttribute)attr2 multiplier:(CGFloat)multiplier constant:(CGFloat)c
+    
+//    [object_getClass(NSLayoutConstraint.class) kc_hookSelectorName:@"constraintWithItem:attribute:relatedBy:toItem:attribute:multiplier:constant:" swizzleSelectorName:@"kc_hook_constraintWithItem:attribute:relatedBy:toItem:attribute:multiplier:constant:"];
+//    
+//    __weak typeof(firstItem) weakFirstItem = firstItem;
+//    __weak typeof(secondItem) weakSecondItem = secondItem;
+//    [NSLayoutConstraint kc_addLayoutCheck:^(id _firstItem, NSLayoutAttribute _firstAttribute, NSLayoutRelation _relation, id _secondItem, NSLayoutAttribute _secondAttribute, CGFloat _multiplier, CGFloat _constant) {
+//        __strong typeof(weakFirstItem) strongFirstItem = weakFirstItem;
+//        __strong typeof(weakSecondItem) strongSecondItem = weakSecondItem;
+//        
+//        // 检查 constant
+//        if (_constant != constant || relation != _relation) {
+//            return;
+//        }
+//        
+//        // 检查 firstAttribute、secondAttribute
+//        if (firstAttribute != _firstAttribute || secondAttribute != _secondAttribute) {
+//            return;
+//        }
+//        
+//        BOOL firstItemEqual = strongFirstItem && _firstItem && ![_firstItem isEqual:[NSNull null]] && [strongFirstItem isEqual:_firstItem];
+//        BOOL secondItemEqual = strongSecondItem && _secondItem && ![_secondItem isEqual:[NSNull null]] && [strongSecondItem isEqual:_secondItem];
+//        
+//        if (!firstItemEqual || !secondItemEqual) {
+//            return;
+//        }
+//        
+//        NSLog(@"✅ 找到了autoLayout");
+//        
+//        if (block) {
+//            block();
+//        }
+//    }];
+}
+
 @end
+
+//@implementation NSLayoutConstraint (KcLayoutCheck)
+//
+//static void *kc_layoutCheckKey = &kc_layoutCheckKey;
+//
+//+ (instancetype)kc_hook_constraintWithItem:(id)view1 attribute:(NSLayoutAttribute)attr1 relatedBy:(NSLayoutRelation)relation toItem:(id)view2 attribute:(NSLayoutAttribute)attr2 multiplier:(CGFloat)multiplier constant:(CGFloat)c {
+//    NSMutableArray *_Nullable layoutChecks = objc_getAssociatedObject(self, kc_layoutCheckKey);
+//    
+//    if (layoutChecks) {
+//        for (id element in layoutChecks) {
+//            void (^layoutCheck)(id view1, NSLayoutAttribute attr1, NSLayoutRelation relation, id view2, NSLayoutAttribute attr2, CGFloat multiplier, CGFloat constant) = element;
+//            layoutCheck(view1, attr1, relation, view2, attr2, multiplier, c);
+//        }
+//    }
+//    
+//    // 要在MRC下, 自己处理内存管理, ARC下会crash⚠️
+//    return [NSLayoutConstraint kc_hook_constraintWithItem:view1 attribute:attr1 relatedBy:relation toItem:view2 attribute:attr2 multiplier:multiplier constant:c];
+//}
+//
+//+ (void)kc_addLayoutCheck:(void (^)(id view1, NSLayoutAttribute attr1, NSLayoutRelation relation, id view2, NSLayoutAttribute attr2, CGFloat multiplier, CGFloat constant))layoutCheck {
+//    NSMutableArray *layoutChecks = objc_getAssociatedObject(self, kc_layoutCheckKey);
+//    
+//    if (!layoutChecks) {
+//        layoutChecks = [[NSMutableArray alloc] init];
+//        
+//        objc_setAssociatedObject(self, kc_layoutCheckKey, layoutChecks, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+//    }
+//    
+//    [layoutChecks addObject:layoutCheck];
+//}
+//
+//@end
