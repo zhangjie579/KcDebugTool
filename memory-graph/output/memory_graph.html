@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Memory Graph 内存图</title>
+<style>
+  :root {
+    --bg: #16181d; --panel: #1e2128; --border: #2e323c;
+    --text: #d7dae0; --muted: #8a919e; --accent: #4f9cf9;
+    --cycle: #f0554f; --edge: #3d434f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+    flex: none; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .stats { color: var(--muted); }
+  header .stats b { color: var(--text); }
+  header input[type=text] {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 5px 10px; width: 220px; outline: none;
+  }
+  header input[type=text]:focus { border-color: var(--accent); }
+  header label { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+  .legend { display: flex; gap: 14px; color: var(--muted); margin-left: auto; font-size: 12px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot.cycle { background: transparent; border: 2px solid var(--cycle); }
+  .dot.normal { background: var(--accent); }
+  main { display: flex; flex: 1; min-height: 0; }
+  #canvasWrap { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+  aside {
+    width: 340px; flex: none; background: var(--panel); border-left: 1px solid var(--border);
+    overflow-y: auto; padding: 14px;
+  }
+  aside .placeholder { color: var(--muted); margin-top: 30px; text-align: center; }
+  aside h2 { font-size: 14px; margin-bottom: 4px; word-break: break-all; }
+  aside .addr { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  aside .badge {
+    display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 4px;
+    background: rgba(240, 85, 79, .15); color: var(--cycle); font-size: 12px; font-weight: 600;
+  }
+  aside .badge.weak {
+    background: rgba(230, 160, 40, .15); color: var(--warn, #e6a028);
+  }
+  aside section { margin-top: 16px; }
+  aside section h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  .ref-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 4px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer;
+  }
+  .ref-item:hover { border-color: var(--accent); }
+  .ref-item .cls { flex: 1; word-break: break-all; }
+  .ref-item .meta { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
+  .ref-item .ivar { color: var(--accent); font-size: 11px; }
+  .own-tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+  .own-strong { background: #e6fcf5; color: #0b7285; }
+  .own-weak { background: #fff4e0; color: #b26a00; }
+  .own-unowned { background: #f3e9ff; color: #7048e8; }
+  .own-nonStrong { background: #fff0f6; color: #c2255c; }
+  .own-unknown { background: #eee; color: #666; }
+  .ref-item.cycle-edge .cls { color: var(--cycle); }
+  #tip {
+    position: absolute; pointer-events: none; display: none;
+    background: rgba(20, 22, 27, .95); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; z-index: 10; max-width: 320px; word-break: break-all;
+  }
+  #tip .addr { color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Memory Graph 内存图</h1>
+  <span class="stats" id="stats"></span>
+  <input type="text" id="search" placeholder="按类名搜索…">
+  <label><input type="checkbox" id="cycleOnly"> 只看循环引用</label>
+  <div class="legend">
+    <span><span class="dot normal"></span>对象（大小 = 被引用数）</span>
+    <span><span class="dot cycle"></span>循环引用</span>
+    <span>拖拽移动 / 滚轮缩放 / 点击查看</span>
+  </div>
+</header>
+<main>
+  <div id="canvasWrap">
+    <canvas id="graph"></canvas>
+    <div id="tip"></div>
+  </div>
+  <aside id="panel">
+    <div class="placeholder">点击左侧节点查看引用关系</div>
+  </aside>
+</main>
+<script>
+const GRAPH = {
+  "classFilter" : "MGDemo,MGPure",
+  "cycles" : [
+    [
+      "0x104d008b0",
+      "0x104d01dc0"
+    ],
+    [
+      "0x104d01d90",
+      "0x104d06720",
+      "0x104d06760",
+      "0x104d06790",
+      "0x104d067b0"
+    ],
+    [
+      "0x104d06040",
+      "0x104d06570"
+    ],
+    [
+      "0x104d06530",
+      "0x104d066c0"
+    ],
+    [
+      "0x104d063f0",
+      "0x104d06470",
+      "0x104d064b0"
+    ],
+    [
+      "0x104d068d0",
+      "0x104d068f0",
+      "0x104d06910"
+    ]
+  ],
+  "edges" : [
+    {
+      "from" : "0x104d008b0",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01dc0"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d06720"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d06790"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d067b0"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d06760"
+    },
+    {
+      "from" : "0x104d01dc0",
+      "indirect" : false,
+      "ivar" : "token",
+      "ownership" : "strong",
+      "to" : "0x104d008b0"
+    },
+    {
+      "from" : "0x104d06040",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d06570"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : false,
+      "ivar" : "currentSession",
+      "ownership" : "strong",
+      "to" : "0x104d06470"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "observers",
+      "ownership" : "strong",
+      "to" : "0x104d06570"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "observers",
+      "ownership" : "strong",
+      "to" : "0x104d01dc0"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "observers",
+      "ownership" : "strong",
+      "to" : "0x104d066c0"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : false,
+      "ivar" : "cache",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "reporters",
+      "ownership" : "strong",
+      "to" : "0x104d06780"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : false,
+      "ivar" : "callbackOwner",
+      "ownership" : "strong",
+      "to" : "0x104d06850"
+    },
+    {
+      "from" : "0x104d06470",
+      "indirect" : false,
+      "ivar" : "config",
+      "ownership" : "strong",
+      "to" : "0x104d064b0"
+    },
+    {
+      "from" : "0x104d06470",
+      "indirect" : false,
+      "ivar" : "coordinator",
+      "ownership" : "strong",
+      "to" : "0x104d063f0"
+    },
+    {
+      "from" : "0x104d064b0",
+      "indirect" : false,
+      "ivar" : "session",
+      "ownership" : "strong",
+      "to" : "0x104d06470"
+    },
+    {
+      "from" : "0x104d06530",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d066c0"
+    },
+    {
+      "from" : "0x104d06570",
+      "indirect" : false,
+      "ivar" : "token",
+      "ownership" : "strong",
+      "to" : "0x104d06040"
+    },
+    {
+      "from" : "0x104d066c0",
+      "indirect" : false,
+      "ivar" : "token",
+      "ownership" : "strong",
+      "to" : "0x104d06530"
+    },
+    {
+      "from" : "0x104d06720",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d06760",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d06790",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d067b0",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d06850",
+      "indirect" : true,
+      "ivar" : "objcBlock",
+      "ownership" : "unknown",
+      "to" : "0x104d06890"
+    },
+    {
+      "from" : "0x104d06850",
+      "indirect" : true,
+      "ivar" : "swiftClosure",
+      "ownership" : "unknown",
+      "to" : "0x104d06890"
+    },
+    {
+      "from" : "0x104d068d0",
+      "indirect" : false,
+      "ivar" : "session",
+      "ownership" : "strong",
+      "to" : "0x104d068f0"
+    },
+    {
+      "from" : "0x104d068f0",
+      "indirect" : false,
+      "ivar" : "config",
+      "ownership" : "strong",
+      "to" : "0x104d06910"
+    },
+    {
+      "from" : "0x104d06910",
+      "indirect" : false,
+      "ivar" : "session",
+      "ownership" : "strong",
+      "to" : "0x104d068f0"
+    },
+    {
+      "from" : "0x104d06910",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d068d0"
+    }
+  ],
+  "generatedAt" : "2026-11-08 16:38:17",
+  "nodeCount" : 21,
+  "nodes" : [
+    {
+      "address" : "0x104d01d90",
+      "className" : "mgtool.MGDemoImageCache",
+      "inCycle" : true,
+      "inDegree" : 5,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d01dc0",
+      "className" : "mgtool.MGDemoObserver",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06470",
+      "className" : "mgtool.MGDemoSession",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06570",
+      "className" : "mgtool.MGDemoObserver",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d066c0",
+      "className" : "mgtool.MGDemoObserver",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06890",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : false,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d068f0",
+      "className" : "mgtool.MGPureSession",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d008b0",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06040",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d063f0",
+      "className" : "mgtool.MGDemoAppCoordinator",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 64,
+      "weaklyReferenced" : true
+    },
+    {
+      "address" : "0x104d064b0",
+      "className" : "mgtool.MGDemoConfig",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06530",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06720",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06760",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06780",
+      "className" : "mgtool.MGDemoReporter",
+      "inCycle" : false,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06790",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d067b0",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06850",
+      "className" : "mgtool.MGDemoCallbackOwner",
+      "inCycle" : false,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d068d0",
+      "className" : "mgtool.MGPureRoot",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06910",
+      "className" : "mgtool.MGPureConfig",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d079f0",
+      "className" : "MGDemoDynamicClass",
+      "inCycle" : false,
+      "inDegree" : 0,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    }
+  ],
+  "nonStrongEdges" : [
+    {
+      "from" : "0x104d01dc0",
+      "indirect" : false,
+      "ivar" : "subject",
+      "ownership" : "weak",
+      "to" : "0x104d063f0"
+    },
+    {
+      "from" : "0x104d06570",
+      "indirect" : false,
+      "ivar" : "subject",
+      "ownership" : "weak",
+      "to" : "0x104d063f0"
+    },
+    {
+      "from" : "0x104d066c0",
+      "indirect" : false,
+      "ivar" : "subject",
+      "ownership" : "weak",
+      "to" : "0x104d063f0"
+    }
+  ]
+};
+
+// ---------- 数据准备 ----------
+const nodeByKey = new Map();       // address -> node
+const outEdges = new Map();        // address -> [edge]
+const inEdges = new Map();         // address -> [edge]
+const cycleSet = new Set();        // 参与循环引用的地址集合
+GRAPH.cycles.forEach(c => c.forEach(a => cycleSet.add(a)));
+
+GRAPH.nodes.forEach(n => {
+  n.key = n.address;
+  nodeByKey.set(n.key, n);
+});
+GRAPH.edges.forEach(e => {
+  if (!nodeByKey.has(e.from) || !nodeByKey.has(e.to)) return;
+  if (!outEdges.has(e.from)) outEdges.set(e.from, []);
+  if (!inEdges.has(e.to)) inEdges.set(e.to, []);
+  outEdges.get(e.from).push(e);
+  inEdges.get(e.to).push(e);
+});
+
+const PALETTE = ['#4f9cf9', '#8f7ef2', '#3fb59a', '#d9963f', '#e06c9f', '#67b6f0', '#a3c964', '#e08a5c'];
+const classColor = new Map();
+let colorCursor = 0;
+GRAPH.nodes.forEach(n => {
+  if (!classColor.has(n.className)) classColor.set(n.className, PALETTE[colorCursor++ % PALETTE.length]);
+});
+
+// ---------- 画布与视口 ----------
+const canvas = document.getElementById('graph');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+const tip = document.getElementById('tip');
+let dpr = window.devicePixelRatio || 1;
+
+const view = { x: 0, y: 0, scale: 1 };   // 世界坐标 -> 屏幕：screen = world * scale + offset
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  canvas.width = wrap.clientWidth * dpr;
+  canvas.height = wrap.clientHeight * dpr;
+}
+window.addEventListener('resize', () => { resize(); draw(); });
+
+// ---------- 力导向布局 ----------
+GRAPH.nodes.forEach((n, i) => {
+  const angle = (i / Math.max(GRAPH.nodes.length, 1)) * Math.PI * 2;
+  const radius = 180 + (i % 7) * 40;
+  n.x = Math.cos(angle) * radius;
+  n.y = Math.sin(angle) * radius;
+  n.vx = 0; n.vy = 0;
+});
+const nodes = GRAPH.nodes;
+const edges = GRAPH.edges.filter(e => nodeByKey.has(e.from) && nodeByKey.has(e.to));
+let alpha = 1;
+
+function step() {
+  if (alpha < 0.005) return;
+  // 斥力
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let dist2 = dx * dx + dy * dy;
+      if (dist2 < 1) { dx = Math.random() - .5; dy = Math.random() - .5; dist2 = 1; }
+      const repulse = 2600 / dist2;
+      const dist = Math.sqrt(dist2);
+      const fx = (dx / dist) * repulse, fy = (dy / dist) * repulse;
+      a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
+    }
+  }
+  // 弹簧
+  edges.forEach(e => {
+    const a = nodeByKey.get(e.from), b = nodeByKey.get(e.to);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const target = 150;
+    const force = (dist - target) * 0.02;
+    const fx = (dx / dist) * force, fy = (dy / dist) * force;
+    a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+  });
+  // 向心 + 积分
+  nodes.forEach(n => {
+    n.vx += -n.x * 0.008; n.vy += -n.y * 0.008;
+    n.vx *= 0.85; n.vy *= 0.85;
+    if (!n.dragging) { n.x += n.vx * alpha * 3; n.y += n.vy * alpha * 3; }
+  });
+  alpha *= 0.995;
+}
+
+// ---------- 交互状态 ----------
+let selected = null, hovered = null;
+let cycleOnly = false;
+let searchToken = '';
+
+function nodeMatches(n) {
+  if (cycleOnly && !cycleSet.has(n.key)) return false;
+  if (searchToken && !n.className.toLowerCase().includes(searchToken)) return false;
+  return true;
+}
+function isDimmed(n) {
+  return (cycleOnly || searchToken) && !nodeMatches(n);
+}
+function isHighlightedEdge(e) {
+  if (!selected) return false;
+  return e.from === selected.key || e.to === selected.key;
+}
+
+// ---------- 绘制 ----------
+function worldToScreen(x, y) { return [x * view.scale + view.x, y * view.scale + view.y]; }
+
+function nodeRadius(n) {
+  return Math.min(10 + n.inDegree * 1.5, 26) ;
+}
+
+function draw() {
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+  // 边（箭头指向被引用方）
+  edges.forEach(e => {
+    const a = nodeByKey.get(e.from), b = nodeByKey.get(e.to);
+    if (!a || !b) return;
+    const highlight = selected && (e.from === selected.key || e.to === selected.key);
+    const dim = (cycleOnly || searchToken) && !(nodeMatches(a) && nodeMatches(b));
+    const inCycle = cycleSet.has(e.from) && cycleSet.has(e.to);
+    ctx.strokeStyle = highlight ? '#e8edf5' : (inCycle ? 'rgba(240,85,79,.75)' : (dim ? 'rgba(61,67,79,.25)' : 'rgba(61,67,79,.9)'));
+    ctx.lineWidth = highlight ? 2 : 1.2;
+
+    const [sx, sy] = worldToScreen(a.x, a.y);
+    const [tx, ty] = worldToScreen(b.x, b.y);
+    const dx = tx - sx, dy = ty - sy;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const rB = nodeRadius(b) + 3;
+    const ex = tx - (dx / dist) * rB, ey = ty - (dy / dist) * rB;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    // 箭头
+    const headLen = 8;
+    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - headLen * Math.cos(angle - 0.4), ey - headLen * Math.sin(angle - 0.4));
+    ctx.lineTo(ex - headLen * Math.cos(angle + 0.4), ey - headLen * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+    // 属性名
+    if (highlight && e.ivar) {
+      ctx.fillStyle = '#8a919e';
+      ctx.font = '11px ui-monospace, Menlo, monospace';
+      ctx.fillText(e.ivar, (sx + ex) / 2 + 6, (sy + ey) / 2 - 4);
+    }
+  });
+
+  // 节点
+  nodes.forEach(n => {
+    const [x, y] = worldToScreen(n.x, n.y);
+    if (x < -60 || y < -60 || x > canvas.width / dpr + 60 || y > canvas.height / dpr + 60) return;
+    const r = nodeRadius(n);
+    const dim = isDimmed(n);
+    const isSel = selected === n;
+    const isHover = hovered === n;
+    const inCycle = cycleSet.has(n.key);
+    ctx.globalAlpha = dim ? 0.15 : 1;
+    // 填充
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = classColor.get(n.className);
+    ctx.fill();
+    // 循环引用红圈
+    if (inCycle) { ctx.lineWidth = 2.5; ctx.strokeStyle = '#f0554f'; ctx.stroke(); }
+    // 选中/悬停圈
+    if (isSel || isHover) { ctx.lineWidth = 2; ctx.strokeStyle = '#e8edf5'; ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.stroke(); }
+    // 标签
+    const label = n.className.replace(/^.*\./, '');
+    ctx.font = '11px -apple-system, "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = dim ? 'rgba(215,218,224,.15)' : '#d7dae0';
+    ctx.fillText(label, x, y + r + 13);
+    ctx.globalAlpha = 1;
+  });
+  ctx.restore();
+}
+
+function tick() {
+  step();
+  draw();
+  requestAnimationFrame(tick);
+}
+
+// ---------- 面板 ----------
+const panel = document.getElementById('panel');
+function refItem(edge, direction) {
+  const otherAddress = direction === 'out' ? edge.to : edge.from;
+  const other = nodeByKey.get(otherAddress);
+  if (!other) return '';
+  const cycleEdge = cycleSet.has(edge.from) && cycleSet.has(edge.to);
+  const ivar = edge.ivar ? `<span class="ivar">${escapeHtml(edge.ivar)}${edge.indirect ? '（容器）' : ''}</span>` : '';
+  const ownership = edge.ownership || 'strong';
+  const ownershipLabel = {strong:'strong', weak:'weak', unowned:'unowned',
+                          nonStrong:'非强(weak/unsafe)', unknown:'未知(捕获无元数据)'}[ownership] || ownership;
+  return `<div class="ref-item ${cycleEdge ? 'cycle-edge' : ''}" data-key="${otherAddress}">
+    <span class="cls">${escapeHtml(other.className)}</span>
+    ${ivar}<span class="own-tag own-${ownership}">${ownershipLabel}</span><span class="meta">${otherAddress}</span></div>`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showPanel(n) {
+  const outs = outEdges.get(n.key) || [];
+  const ins = inEdges.get(n.key) || [];
+  const inCycle = cycleSet.has(n.key);
+  panel.innerHTML = `
+    <h2>${escapeHtml(n.className)}</h2>
+    <div class="addr">${escapeHtml(n.address)} · ${n.size} bytes · 被引用 ${n.inDegree} 次${n.weaklyReferenced ? ' · <span style="color:var(--warn,#e6a028)">被 weak 引用过</span>' : ''}</div>
+    ${inCycle ? '<span class="badge">⚠ 参与循环引用（无法释放）</span>' : ''}
+    ${n.weaklyReferenced ? '<span class="badge weak">被 weak 引用过（对象级标记，不指向具体入边；闭包/block 捕获强弱无法区分）</span>' : ''}
+    <section><h3>被谁引用（${ins.length}）</h3>${ins.map(e => refItem(e, 'in')).join('') || '<div class="addr">无 —— 可能是泄漏根</div>'}</section>
+    <section><h3>引用了谁（${outs.length}）</h3>${outs.map(e => refItem(e, 'out')).join('') || '<div class="addr">无</div>'}</section>`;
+  panel.querySelectorAll('.ref-item').forEach(item => {
+    item.addEventListener('click', () => selectNode(nodeByKey.get(item.dataset.key)));
+  });
+}
+
+function selectNode(n) {
+  selected = n;
+  if (n) {
+    // 平移视口让选中节点居中
+    const [x, y] = worldToScreen(n.x, n.y);
+    view.x += wrap.clientWidth / 2 - x;
+    view.y += wrap.clientHeight / 2 - y;
+    showPanel(n);
+  }
+  draw();
+}
+
+// ---------- 指针拾取 ----------
+function nodeAt(mx, my) {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    const [x, y] = worldToScreen(n.x, n.y);
+    const r = nodeRadius(n) + 4;
+    if ((mx - x) ** 2 + (my - y) ** 2 <= r * r) return n;
+  }
+  return null;
+}
+
+let dragNode = null, panning = false, lastMouse = null;
+canvas.addEventListener('mousedown', ev => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  const n = nodeAt(mx, my);
+  if (n) {
+    dragNode = n; n.dragging = true;
+  } else {
+    panning = true; canvas.classList.add('dragging');
+  }
+  lastMouse = { x: ev.clientX, y: ev.clientY };
+});
+window.addEventListener('mousemove', ev => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  if (dragNode) {
+    const [wx, wy] = [(mx - view.x) / view.scale, (my - view.y) / view.scale];
+    dragNode.x = wx; dragNode.y = wy;
+    return;
+  }
+  if (panning) {
+    view.x += ev.clientX - lastMouse.x;
+    view.y += ev.clientY - lastMouse.y;
+    lastMouse = { x: ev.clientX, y: ev.clientY };
+    return;
+  }
+  const n = nodeAt(mx, my);
+  hovered = n;
+  if (n) {
+    tip.style.display = 'block';
+    tip.style.left = (mx + 14) + 'px';
+    tip.style.top = (my + 14) + 'px';
+    tip.innerHTML = `<b>${escapeHtml(n.className)}</b><br>
+      <span class="addr">${escapeHtml(n.address)} · ${n.size} bytes · 被引用 ${n.inDegree} 次${n.weaklyReferenced ? ' · weak?' : ''}</span>
+      ${cycleSet.has(n.key) ? '<br><span style="color:var(--cycle)">⚠ 循环引用</span>' : ''}`;
+    canvas.style.cursor = 'pointer';
+  } else {
+    tip.style.display = 'none';
+    canvas.style.cursor = panning ? 'grabbing' : 'grab';
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (dragNode) { dragNode.dragging = false; dragNode = null; }
+  panning = false; canvas.classList.remove('dragging');
+});
+canvas.addEventListener('click', ev => {
+  const rect = canvas.getBoundingClientRect();
+  const n = nodeAt(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (n) selectNode(n);
+  else if (selected) { selected = null; panel.innerHTML = '<div class="placeholder">点击左侧节点查看引用关系</div>'; draw(); }
+});
+canvas.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const newScale = Math.min(Math.max(view.scale * factor, 0.08), 6);
+  // 以鼠标位置为缩放中心
+  view.x = mx - (mx - view.x) * (newScale / view.scale);
+  view.y = my - (my - view.y) * (newScale / view.scale);
+  view.scale = newScale;
+}, { passive: false });
+
+// ---------- 工具栏 ----------
+document.getElementById('search').addEventListener('input', ev => {
+  searchToken = ev.target.value.trim().toLowerCase();
+});
+document.getElementById('cycleOnly').addEventListener('change', ev => {
+  cycleOnly = ev.target.checked;
+});
+
+// ---------- 初始化 ----------
+document.getElementById('stats').innerHTML =
+  `对象 <b>${GRAPH.nodes.length}</b> · 强引用边 <b>${edges.length}</b> · 循环引用 <b>${GRAPH.cycles.length}</b> 组 · 过滤前缀 <b>${escapeHtml(GRAPH.classFilter)}</b> · 生成于 ${escapeHtml(GRAPH.generatedAt)}`;
+
+// 初始视野：包住全部节点
+requestAnimationFrame(() => {
+  resize();
+  if (nodes.length) {
+    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+    const minX = Math.min(...xs) - 120, maxX = Math.max(...xs) + 120;
+    const minY = Math.min(...ys) - 120, maxY = Math.max(...ys) + 120;
+    view.scale = Math.min(wrap.clientWidth / (maxX - minX), wrap.clientHeight / (maxY - minY), 1.4);
+    view.x = (wrap.clientWidth - (maxX + minX) * view.scale) / 2;
+    view.y = (wrap.clientHeight - (maxY + minY) * view.scale) / 2;
+  }
+  // 若有循环引用，默认选中第一个环上的第一个节点，方便直接看到问题
+  if (GRAPH.cycles.length) {
+    const first = nodeByKey.get(GRAPH.cycles[0][0]);
+    if (first) { selected = first; showPanel(first); }
+  }
+  tick();
+});
+</script>
+</body>
+</html>

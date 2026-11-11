@@ -1,0 +1,462 @@
+{
+  "classFilter" : "MGDemo,MGPure",
+  "cycles" : [
+    [
+      "0x104d008b0",
+      "0x104d01dc0"
+    ],
+    [
+      "0x104d01d90",
+      "0x104d06720",
+      "0x104d06760",
+      "0x104d06790",
+      "0x104d067b0"
+    ],
+    [
+      "0x104d06040",
+      "0x104d06570"
+    ],
+    [
+      "0x104d06530",
+      "0x104d066c0"
+    ],
+    [
+      "0x104d063f0",
+      "0x104d06470",
+      "0x104d064b0"
+    ],
+    [
+      "0x104d068d0",
+      "0x104d068f0",
+      "0x104d06910"
+    ]
+  ],
+  "edges" : [
+    {
+      "from" : "0x104d008b0",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01dc0"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d06720"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d06790"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d067b0"
+    },
+    {
+      "from" : "0x104d01d90",
+      "indirect" : true,
+      "ivar" : "entries",
+      "ownership" : "strong",
+      "to" : "0x104d06760"
+    },
+    {
+      "from" : "0x104d01dc0",
+      "indirect" : false,
+      "ivar" : "token",
+      "ownership" : "strong",
+      "to" : "0x104d008b0"
+    },
+    {
+      "from" : "0x104d06040",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d06570"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : false,
+      "ivar" : "currentSession",
+      "ownership" : "strong",
+      "to" : "0x104d06470"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "observers",
+      "ownership" : "strong",
+      "to" : "0x104d06570"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "observers",
+      "ownership" : "strong",
+      "to" : "0x104d01dc0"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "observers",
+      "ownership" : "strong",
+      "to" : "0x104d066c0"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : false,
+      "ivar" : "cache",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : true,
+      "ivar" : "reporters",
+      "ownership" : "strong",
+      "to" : "0x104d06780"
+    },
+    {
+      "from" : "0x104d063f0",
+      "indirect" : false,
+      "ivar" : "callbackOwner",
+      "ownership" : "strong",
+      "to" : "0x104d06850"
+    },
+    {
+      "from" : "0x104d06470",
+      "indirect" : false,
+      "ivar" : "config",
+      "ownership" : "strong",
+      "to" : "0x104d064b0"
+    },
+    {
+      "from" : "0x104d06470",
+      "indirect" : false,
+      "ivar" : "coordinator",
+      "ownership" : "strong",
+      "to" : "0x104d063f0"
+    },
+    {
+      "from" : "0x104d064b0",
+      "indirect" : false,
+      "ivar" : "session",
+      "ownership" : "strong",
+      "to" : "0x104d06470"
+    },
+    {
+      "from" : "0x104d06530",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d066c0"
+    },
+    {
+      "from" : "0x104d06570",
+      "indirect" : false,
+      "ivar" : "token",
+      "ownership" : "strong",
+      "to" : "0x104d06040"
+    },
+    {
+      "from" : "0x104d066c0",
+      "indirect" : false,
+      "ivar" : "token",
+      "ownership" : "strong",
+      "to" : "0x104d06530"
+    },
+    {
+      "from" : "0x104d06720",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d06760",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d06790",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d067b0",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d01d90"
+    },
+    {
+      "from" : "0x104d06850",
+      "indirect" : true,
+      "ivar" : "objcBlock",
+      "ownership" : "unknown",
+      "to" : "0x104d06890"
+    },
+    {
+      "from" : "0x104d06850",
+      "indirect" : true,
+      "ivar" : "swiftClosure",
+      "ownership" : "unknown",
+      "to" : "0x104d06890"
+    },
+    {
+      "from" : "0x104d068d0",
+      "indirect" : false,
+      "ivar" : "session",
+      "ownership" : "strong",
+      "to" : "0x104d068f0"
+    },
+    {
+      "from" : "0x104d068f0",
+      "indirect" : false,
+      "ivar" : "config",
+      "ownership" : "strong",
+      "to" : "0x104d06910"
+    },
+    {
+      "from" : "0x104d06910",
+      "indirect" : false,
+      "ivar" : "session",
+      "ownership" : "strong",
+      "to" : "0x104d068f0"
+    },
+    {
+      "from" : "0x104d06910",
+      "indirect" : false,
+      "ivar" : "owner",
+      "ownership" : "strong",
+      "to" : "0x104d068d0"
+    }
+  ],
+  "generatedAt" : "2026-11-08 16:38:17",
+  "nodeCount" : 21,
+  "nodes" : [
+    {
+      "address" : "0x104d01d90",
+      "className" : "mgtool.MGDemoImageCache",
+      "inCycle" : true,
+      "inDegree" : 5,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d01dc0",
+      "className" : "mgtool.MGDemoObserver",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06470",
+      "className" : "mgtool.MGDemoSession",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06570",
+      "className" : "mgtool.MGDemoObserver",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d066c0",
+      "className" : "mgtool.MGDemoObserver",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06890",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : false,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d068f0",
+      "className" : "mgtool.MGPureSession",
+      "inCycle" : true,
+      "inDegree" : 2,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d008b0",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06040",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d063f0",
+      "className" : "mgtool.MGDemoAppCoordinator",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 64,
+      "weaklyReferenced" : true
+    },
+    {
+      "address" : "0x104d064b0",
+      "className" : "mgtool.MGDemoConfig",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06530",
+      "className" : "mgtool.MGDemoToken",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06720",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06760",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06780",
+      "className" : "mgtool.MGDemoReporter",
+      "inCycle" : false,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06790",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d067b0",
+      "className" : "mgtool.MGDemoCacheEntry",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06850",
+      "className" : "mgtool.MGDemoCallbackOwner",
+      "inCycle" : false,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d068d0",
+      "className" : "mgtool.MGPureRoot",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d06910",
+      "className" : "mgtool.MGPureConfig",
+      "inCycle" : true,
+      "inDegree" : 1,
+      "isBlock" : false,
+      "size" : 32,
+      "weaklyReferenced" : false
+    },
+    {
+      "address" : "0x104d079f0",
+      "className" : "MGDemoDynamicClass",
+      "inCycle" : false,
+      "inDegree" : 0,
+      "isBlock" : false,
+      "size" : 16,
+      "weaklyReferenced" : false
+    }
+  ],
+  "nonStrongEdges" : [
+    {
+      "from" : "0x104d01dc0",
+      "indirect" : false,
+      "ivar" : "subject",
+      "ownership" : "weak",
+      "to" : "0x104d063f0"
+    },
+    {
+      "from" : "0x104d06570",
+      "indirect" : false,
+      "ivar" : "subject",
+      "ownership" : "weak",
+      "to" : "0x104d063f0"
+    },
+    {
+      "from" : "0x104d066c0",
+      "indirect" : false,
+      "ivar" : "subject",
+      "ownership" : "weak",
+      "to" : "0x104d063f0"
+    }
+  ]
+}
