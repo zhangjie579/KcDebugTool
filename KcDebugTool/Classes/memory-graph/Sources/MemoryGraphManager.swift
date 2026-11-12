@@ -73,7 +73,8 @@ class MemoryGraphManager: NSObject {
 
             DispatchQueue.main.async {
                 let vc = MGWKWebViewController(localURL: url)
-                viewController.present(vc, animated: true)
+                // 报告页的关闭 / 分享按钮挂在 navigationItem 上，需包一层导航控制器才能显示
+                viewController.present(UINavigationController(rootViewController: vc), animated: true)
             }
         }
     }
@@ -537,6 +538,8 @@ final class MGWKWebViewController: UIViewController {
     private func setupUI() {
         view.backgroundColor = .white
 
+        setupNavigationItems()
+
         let configuration = WKWebViewConfiguration()
         if #available(iOS 14.0, *) {
             configuration.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -556,6 +559,16 @@ final class MGWKWebViewController: UIViewController {
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    /// 页面由调用方模态弹出：左侧关闭，右侧分享当前 HTML 文件。
+    /// 按钮挂在 navigationItem 上，调用方需用 UINavigationController 包装后 present。
+    private func setupNavigationItems() {
+        navigationItem.title = localURL.lastPathComponent
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .done, target: self, action: #selector(close))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .action, target: self, action: #selector(share))
     }
 
     // MARK: - Load
@@ -578,6 +591,28 @@ final class MGWKWebViewController: UIViewController {
         if webView.canGoBack {
             webView.goBack()
         }
+    }
+
+    /// 分享当前展示的 HTML 文件本体：报告内联了 SVG / CSS，单文件即可离线查看。
+    /// 传文件 URL 而非 HTML 文本，AirDrop / 存储到文件 / 第三方 App 才会按 .html 接收。
+    @objc func share() {
+        guard FileManager.default.fileExists(atPath: localURL.path) else {
+            let alert = UIAlertController(
+                title: "HTML 文件不存在",
+                message: localURL.lastPathComponent,
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        let activityVC = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
+        // iPad 上分享面板是 popover，没有锚点会在 present 时抛异常
+        activityVC.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+        present(activityVC, animated: true)
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
     }
 }
 
