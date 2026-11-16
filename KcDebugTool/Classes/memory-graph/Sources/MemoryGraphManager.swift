@@ -12,7 +12,7 @@ import WebKit
 @objcMembers
 class MemoryGraphManager: NSObject {
     /// 引用关系快速排查：以当前触发入口的页面 VC 为目标，识别堆对象（秒级）后
-    /// 反查目标被谁引用、它引用了谁。weak / unowned 自动排除。
+    /// 反查目标被谁引用、它引用了谁。weak / unowned 单独展示，不参与强引用层级扩展。
     /// 注意：全量内存图（scan() + 模板导出）在大堆上耗时分钟级，排查单对象勿用。
     /// [MemoryGraphManager captureMemoryGraphFrom:self];
     class func captureMemoryGraph(from viewController: UIViewController) {
@@ -110,7 +110,7 @@ class MemoryGraphManager: NSObject {
     private class func nonStrongHTML(for report: MemoryGraphScanner.ReferenceReport) -> String {
         var html = """
         <div class="card nonstrong-card">
-          <h2>非强引用与字段</h2>
+          <h2>它的非强引用与字段</h2>
         """
         if report.nonStrongOutgoing.isEmpty && report.nonStrongFields.isEmpty {
             html += "<p class='empty'>未发现 weak / unowned 字段或 block 弱捕获</p>"
@@ -231,11 +231,13 @@ class MemoryGraphManager: NSObject {
           <marker id="arrowUnknown" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#868e96"/></marker>
           <marker id="arrowWeak" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#b26a00"/></marker>
           <marker id="arrowUnowned" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#7048e8"/></marker>
+          <marker id="arrowUnownedUnsafe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#5f3dc4"/></marker>
           <marker id="arrowNonStrong" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#c2255c"/></marker>
         </defs>
         <rect x="0" y="0" width="\(width)" height="\(height)" fill="#fbfcfd" rx="10"/>
         """
-        // 线型按 ownership：unknown 灰色点线（明确表示无元数据），环边红色加粗优先
+        // 线型按 ownership：unknown 灰色点线（明确表示无元数据），环边红色加粗优先。
+        // unconfirmedStrong 沿用强引用配色但用虚线区分「未确证」，不冒充 confirmed。
         func edgeStyle(_ edge: ReferenceEdge, isIncoming: Bool,
                        inCycle: Bool) -> (color: String, arrow: String, dashed: Bool) {
             if inCycle { return ("#e03131", "arrowCycle", false) }
@@ -243,7 +245,10 @@ class MemoryGraphManager: NSObject {
             case .unknown: return ("#868e96", "arrowUnknown", true)
             case .weak: return ("#b26a00", "arrowWeak", true)
             case .unowned: return ("#7048e8", "arrowUnowned", true)
+            case .unownedUnsafe: return ("#5f3dc4", "arrowUnownedUnsafe", true)
             case .nonStrong: return ("#c2255c", "arrowNonStrong", true)
+            case .unconfirmedStrong:
+                return (isIncoming ? "#d63384" : "#1c7ed6", isIncoming ? "arrowIn" : "arrowOut", true)
             case .strong:
                 return (isIncoming ? "#d63384" : "#1c7ed6", isIncoming ? "arrowIn" : "arrowOut", false)
             }
@@ -334,7 +339,11 @@ class MemoryGraphManager: NSObject {
             html += "<p class='empty'>未发现经过该对象的强引用环（可正常释放，或环超出搜索深度）</p>"
         } else {
             for (index, chain) in report.cycles.enumerated() {
+                let hasUnconfirmed = chain.edges.contains { $0.ownership == .unconfirmedStrong }
                 html += "<div class='chain'><span class='chain-idx'>#\(index + 1)</span>"
+                if hasUnconfirmed {
+                    html += "<span class='chain-unconfirmed'>含未确证边</span>"
+                }
                 for link in chain.edges {
                     let fullName = chain.classNameByAddress[link.from] ?? className(of: link.from, report: report)
                     let isTarget = link.from == report.address
@@ -347,9 +356,38 @@ class MemoryGraphManager: NSObject {
                 html += "<span class='chain-node is-target' title='\(escapeHTML(targetName)) \(hex(report.address))'>↩ \(escapeHTML(shortClassName(targetName)))</span>"
                 html += "<span class='chain-len'>\(chain.edges.count) 条边</span></div>"
             }
-            html += "<p class='chain-note'>* 表示经容器 / 闭包透传；链从目标出发最终回到目标，环上的边在引用图中标红加粗。</p>"
+            html += "<p class='chain-note'>* 表示经容器 / 闭包透传；链从目标出发最终回到目标，环上的边在引用图中标红加粗。「含未确证边」表示该链上有类属性因所有权元数据缺失按默认 strong 参与找环，需结合实际声明核对是否为 weak。</p>"
         }
         return html + "</div>"
+    }
+
+    /// NotificationCenter 的 block 注册由全局中心长期持有。Foundation 返回的
+    /// __NSObserver token 不保证反向持有 block，因此这类泄漏不能伪装成循环引用。
+    private class func notificationRetentionHTML(for report: MemoryGraphScanner.ReferenceReport) -> String {
+        guard !report.notificationRetentions.isEmpty else { return "" }
+        var html = """
+        <div class="card retention-card">
+          <h2>NotificationCenter 长期持有（非循环）</h2>
+          <p>发现通知回调 block 强持有该对象。持有根是 NotificationCenter 的内部注册表；即使对象保存了 observer token，也不一定能从 token 沿对象字段走回 block，所以不会出现在“循环引用链”。未调用 removeObserver 前，该对象不能释放。</p>
+          <ul>
+        """
+        for edge in report.notificationRetentions {
+            html += """
+            <li>\(escapeHTML(edgeIvarLabel(edge)))\(ownershipBadge(edge.ownership))<br><span class="cls">\(escapeHTML(className(of: edge.from, report: report)))</span> <span class="addr">\(hex(edge.from))</span></li>
+            """
+        }
+        let observerTokens = report.outgoing.filter {
+            className(of: $0.to, report: report).contains("__NSObserver")
+        }
+        if !observerTokens.isEmpty {
+            html += "</ul><h3>目标保存的 observer token</h3><ul>"
+            for edge in observerTokens {
+                html += """
+                <li>经 \(escapeHTML(edge.ivarName ?? "?"))\(ownershipBadge(edge.ownership))<br><span class="cls">\(escapeHTML(className(of: edge.to, report: report)))</span> <span class="addr">\(hex(edge.to))</span></li>
+                """
+            }
+        }
+        return html + "</ul></div>"
     }
 
     /// 单对象引用报告页：引用图 + 循环链 + 目标信息 + incoming（按反查层级分组）+ outgoing
@@ -361,21 +399,26 @@ class MemoryGraphManager: NSObject {
         </div>
         <div class="card">
           <h2>引用图</h2>
-          <div class="legend"><span><i class="dot-inc"></i>引用它（incoming）</span><span><i class="dot-out"></i>它引用（outgoing）</span><span><i class="dot-cycle"></i>循环链上的边</span><span><i class="dot-weakline"></i>weak / unowned（虚线）</span><span><i class="dot-unknown"></i>unknown（闭包捕获，无元数据）</span><span class="legend-tip">箭头为引用方向 · 点节点看详情</span></div>
+          <div class="legend"><span><i class="dot-inc"></i>引用它（incoming）</span><span><i class="dot-out"></i>它引用（outgoing）</span><span><i class="dot-cycle"></i>循环链上的边</span><span><i class="dot-weakline"></i>weak / unowned（虚线）</span><span><i class="dot-unknown"></i>unknown（无可用所有权元数据）</span><span class="legend-tip">箭头为引用方向 · 点节点看详情</span></div>
           <div class="graph-scroll">\(referenceGraphSVG(for: report))</div>
         </div>
         """
+        body += notificationRetentionHTML(for: report)
         body += cycleChainsHTML(for: report)
-        // incoming：confirmed strong 与不参与找环的 unknown 分开展示，
-        // 避免 unknown 因存放在 report.incoming 中被页面标题误导成 strong。
-        let strongIncoming = report.incoming.filter { $0.ownership == .strong }
+        // incoming：参与找环的强引用（confirmed + 未确证）与不参与找环的 unknown 分开，
+        // 避免 unknown 因存放在 report.incoming 中被页面标题误导成 strong。每条边带
+        // ownership 徽标，未确证的 strong 会明确标「疑似」。
+        let strongIncoming = report.incoming.filter { $0.ownership.participatesInCycleDetection }
         let unknownIncoming = report.incoming.filter { $0.ownership == .unknown }
+        let nonStrongIncoming = report.incoming.filter {
+            !$0.ownership.participatesInCycleDetection && $0.ownership != .unknown
+        }
         body += """
         <div class="card">
-          <h2>谁引用了它（确认 strong）</h2>
+          <h2>谁引用了它（参与找环的强引用）</h2>
         """
         if strongIncoming.isEmpty {
-            body += "<p class='empty'>未发现确认的 strong 引用来源</p>"
+            body += "<p class='empty'>未发现可参与找环的 strong 引用来源</p>"
         } else {
             let levels = Set(strongIncoming.compactMap { report.incomingLevel[$0.from] }).sorted()
             for level in levels {
@@ -398,15 +441,29 @@ class MemoryGraphManager: NSObject {
             }
             body += "</ul></div>"
         }
-        // outgoing 同样分离 confirmed strong / unknown
-        let strongOutgoing = report.outgoing.filter { $0.ownership == .strong }
+        if !nonStrongIncoming.isEmpty {
+            body += "<div class='card nonstrong-card'><h2>谁以非强方式引用了它（不持有、不参与找环）</h2>"
+            let levels = Set(nonStrongIncoming.compactMap { report.incomingLevel[$0.from] }).sorted()
+            for level in levels {
+                body += "<h3>第 \(level) 层引用</h3><ul>"
+                for edge in nonStrongIncoming where report.incomingLevel[edge.from] == level {
+                    body += """
+                    <li id="n_\(edge.from)">\(escapeHTML(edgeIvarLabel(edge)))\(ownershipBadge(edge.ownership))<br><span class="cls">\(escapeHTML(className(of: edge.from, report: report)))</span> <span class="addr">\(hex(edge.from))</span></li>
+                    """
+                }
+                body += "</ul>"
+            }
+            body += "</div>"
+        }
+        // outgoing 同样分离「参与找环的强引用」/ unknown；徽标会标出未确证项
+        let strongOutgoing = report.outgoing.filter { $0.ownership.participatesInCycleDetection }
         let unknownOutgoing = report.outgoing.filter { $0.ownership == .unknown }
         body += """
         <div class="card">
-          <h2>它引用了谁（确认 strong）</h2>
+          <h2>它引用了谁（参与找环的强引用）</h2>
         """
         if strongOutgoing.isEmpty {
-            body += "<p class='empty'>未发现确认的 strong 引用对象</p>"
+            body += "<p class='empty'>未发现可参与找环的 strong 引用对象</p>"
         } else {
             body += "<ul>"
             for edge in strongOutgoing {
@@ -433,13 +490,14 @@ class MemoryGraphManager: NSObject {
           <h2>每条边的 strong / weak / unowned 判定依据</h2>
           <table class="own-table">
             <tr><th>来源</th><th>能否准确区分</th><th>依据</th></tr>
-            <tr><td>Swift 类属性</td><td><b>strong / weak / unowned</b></td><td>反射 <code>isStrong</code> 排除非强字段；Optional 非强字段统一标 weak，非 Optional 标 unowned</td></tr>
+            <tr><td>Swift 类属性</td><td><b>strong / weak / unowned / unowned(unsafe)</b>；描述符未匹配时标「疑似 strong」</td><td>名称和偏移取受保护的 reflectionMirror SPI；ownership 唯一取 <code>__swift5_fieldmd</code> 的 Xw / Xo / Xu / 无尾缀，不读取反射 <code>isStrong</code>。类名含 symbolic reference 或跨类同名字段歧义导致描述符匹配失败时，按存储属性默认 strong 参与找环并标注未确证</td></tr>
             <tr><td>ObjC 类属性</td><td><b>strong / weak 准确</b>；其余非强标「非强」</td><td><code>class_getIvarLayout</code> + <code>class_getWeakIvarLayout</code>；不在两份布局中的对象 ivar 可能是 <code>__unsafe_unretained</code></td></tr>
             <tr><td>ObjC block 捕获</td><td><b>有符号时身份可定位；ownership 准确</b></td><td>invoke 指针定位具体 block；BlockDescriptor extended layout 标明 STRONG / WEAK / UNRETAINED / BYREF</td></tr>
-            <tr><td>Swift 原生闭包捕获</td><td><b>有符号的属性闭包可定位；ownership 标 unknown</b></td><td>函数字段代码指针可还原 <code>closure #N in ...</code>；context metadata 无 ownership 枚举，无法区分 <code>[x]</code> / <code>[weak x]</code></td></tr>
+            <tr><td>Swift 原生闭包捕获</td><td><b>有符号的属性闭包可定位；可证明偏移的捕获可判 ownership</b></td><td>函数字段代码指针可还原 <code>closure #N in ...</code>；<code>__swift5_capture</code> 的 CaptureTypeRecord 提供 Xw / Xo / Xu / 无尾缀；无尾缀 strong 可能是多字值，其后的槽降级为 unknown</td></tr>
             <tr><td><code>@convention(block)</code> 桥接</td><td><b>不能，标 unknown</b></td><td>桥接 block 无 extended layout（实测 flags=0x43000002）；弱捕获在 Swift 上下文层</td></tr>
           </table>
-          <p><code>unknown</code> 边只作为潜在引用展示，不参与循环检测；循环引用链只使用确认的 strong 边。
+          <p><code>unknown</code> 边（闭包 / 容器透传无元数据）只作为潜在引用展示，不参与循环检测；
+          循环引用链使用确认的 strong 边与「疑似 strong」边（类存储属性元数据缺失，按语言默认 strong 参与，链上标注「含未确证边」，需核对是否为 weak）。
           isa 的 <code>weakly_referenced</code> 位只是对象级 sticky 标记，不指向任何具体边，不参与判定。</p>
         </div>
         """
@@ -477,6 +535,9 @@ class MemoryGraphManager: NSObject {
           .gnode:hover rect { stroke-width: 2.8; }
           li:target { background: #fff9db; }
           .cycle-card h2 { color: #e03131; }
+          .retention-card { border-left: 5px solid #f08c00; }
+          .retention-card h2 { color: #d9480f; }
+          .retention-card p { color: #5f3b13; line-height: 1.55; }
           .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; border-bottom: 1px solid #f1f3f5; font-size: 13px; }
           .chain:last-of-type { border-bottom: none; }
           .chain-idx { color: #adb5bd; font-size: 12px; margin-right: 2px; }
@@ -484,14 +545,17 @@ class MemoryGraphManager: NSObject {
           .chain-node.is-target { background: #343a40; border-color: #212529; color: #fff; }
           .hop { color: #e03131; font-size: 12px; white-space: nowrap; }
           .chain-len { color: #adb5bd; font-size: 12px; margin-left: 4px; white-space: nowrap; }
+          .chain-unconfirmed { background: #fff4e0; color: #b26a00; font-size: 11px; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
           .chain-note { color: #868e96; font-size: 12px; margin: 10px 0 0; }
           .note-card h2 { color: #6c757d; }
           .note-card p { color: #495057; font-size: 13px; line-height: 1.6; margin: 6px 0; }
           .note-card code { background: #f1f3f5; border-radius: 3px; padding: 1px 4px; font-size: 12px; }
           .own { font-size: 11px; border-radius: 4px; padding: 1px 5px; margin-left: 4px; white-space: nowrap; }
           .own-strong { background: #e6fcf5; color: #0b7285; }
+          .own-unconfirmedStrong { background: #e7f5ff; color: #1971c2; }
           .own-weak { background: #fff4e0; color: #b26a00; }
           .own-unowned { background: #f3e9ff; color: #7048e8; }
+          .own-unownedUnsafe { background: #ede9fe; color: #5f3dc4; }
           .own-nonStrong { background: #fff0f6; color: #c2255c; }
           .own-unknown { background: #f1f3f5; color: #6c757d; }
           .own-table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0; }

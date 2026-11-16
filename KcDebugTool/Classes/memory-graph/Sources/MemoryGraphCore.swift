@@ -11,11 +11,19 @@
 //     「该对象被 weak 引用（或曾引用）」的节点级标记；
 //  3. 对每个对象按 ivar 偏移扫描指针字，把指向其他已识别对象的字记为
 //     一条强引用边；weak / unowned ivar 自动排除出强引用图：Swift 定义的类
-//     经 swift_reflectionMirror_* 反射元数据的 isStrong 标记识别
-//     （Optional 非强字段统一按 weak 处理，非 Optional 按 unowned 处理），
-//     ObjC 定义的类经 ivarLayout 识别；--weak-ivar 仅作为兜底手段；
+//     经 Mach-O __swift5_fieldmd 字段描述符的类型 mangling 尾缀识别
+//     （Xw=weak、Xo=unowned、Xu=unowned(unsafe)，无尾缀=strong，
+//     已由 IR 与二进制双重验证），ObjC 定义的类经 ivarLayout 识别；
+//     --weak-ivar 仅作为兜底手段；
+//     关键约束：Swift 类禁止走 class_copyIvarList 等强制 realize 的 ObjC API
+//     （真机实测崩在 libobjc safe_ro）；字段名与绝对实例偏移取自受保护的
+//     swift_reflectionMirror_recursiveChild*，不读取其 isStrong；Swift 类先用
+//     class_data_bits_t 的 FAST_IS_SWIFT 标志分流（vm_read 直读，不触发 realize）；
 //     对指向「非对象容器块」（Swift Array/Dictionary 缓冲区、未被过滤进
 //     图中的 NSArray 等）的字做一层透传扫描，保证容器内元素的引用不丢失；
+//     Swift 闭包上下文（HeapLocalVariable）从首个可定位捕获槽起，经 Mach-O
+//     __swift5_capture 的 CaptureDescriptor 判定（同一套 Xw/Xo/Xu 判别式），ObjC block 捕获
+//     经 libclosure 的 BlockDescriptor extended layout 判定；强捕获参与循环检测；
 //  4. Tarjan 算法求强连通分量，size > 1 或存在自环的分量即循环引用。
 //
 //  说明：
@@ -32,6 +40,7 @@
 import Foundation
 import Darwin
 import ObjectiveC.runtime
+import MachO
 
 // swiftlint:disable force_unwrapping
 
@@ -106,14 +115,293 @@ private let swiftDemangle: SwiftDemangleC? = {
     return unsafeBitCast(symbol, to: SwiftDemangleC.self)
 }()
 
-// MARK: - Swift 反射元数据（weak / unowned 自动识别）
+/// 把 Swift mangled 类型名 demangle 为可读类名；libobjc 未导出符号或 exotic
+/// mangling 时返回 nil。用于把 __swift5_fieldmd 的描述符键与 class_getName 对齐。
+private func demangleSwiftType(_ mangled: String) -> String? {
+    guard let demangler = swiftDemangle else { return nil }
+    return mangled.utf8CString.withUnsafeBytes { raw in
+        guard let base = raw.baseAddress?.assumingMemoryBound(to: CChar.self) else { return nil }
+        guard let output = demangler(base, raw.count - 1, nil, nil, 0) else { return nil }
+        defer { free(output) }
+        return String(cString: output)
+    }
+}
 
-/// 与运行时 `_FieldReflectionMetadata` 相同的 C ABI 布局：
-/// name 8 字节 + name free callback 8 字节 + isStrong 1 字节 +
-/// isVar 1 字节 + 6 字节填充。字段类型是反射函数的返回值，
-/// 不在这个结构体内；名称用完后必须调用 freeFunc 释放。
-/// isStrong = false 即 weak / unowned / 间接枚举等非强持有——Swift 类可据此
-/// 排除非强字段（ObjC 定义的类无此元数据，走 ivarLayout 路径）。
+// MARK: - Swift 字段所有权（__swift5_fieldmd，唯一可靠来源）
+
+/// Swift 存储属性的「所有权」唯一可靠来源是 Mach-O 的 `__swift5_fieldmd`
+/// 字段描述符，而非运行时反射：字段类型 mangling 的尾缀直接给出语义，
+/// 已由 IR 与二进制双重验证：Xw=weak、Xo=unowned、Xu=unowned(unsafe)/unmanaged、
+/// 无尾缀=strong。相对地，`swift_reflectionMirror_*` 的 isStrong 只能按 Optional 形态
+/// 猜测 weak/unowned，无法区分 unowned(unsafe)，且对堆 resident 元数据会崩溃。
+/// 下列代码只读 Mach-O 元数据、不触碰任何实例，结果按已加载镜像数缓存重建。
+
+/// 单个字段的 ownership。函数类型由 reflection 返回的 Any.Type 判断，避免对含
+/// symbolic reference 的 mangling 做普通 C 字符串解析。
+private struct SwiftFieldInfo {
+    let ownership: ReferenceOwnership
+}
+
+private struct ReflectedSwiftField {
+    let name: String
+    let offset: Int
+    let type: Any.Type
+}
+
+/// 单份 FieldDescriptor。类名可能包含 symbolic reference，无法保证能按普通 C 字符串
+/// demangle，因此即使 className 解析失败也必须保留 fields，再通过同镜像字段集合匹配。
+private struct SwiftFieldDescriptorInfo {
+    let className: String?
+    let imagePath: String
+    let fields: [String: SwiftFieldInfo]
+    let normalizedFields: [String: SwiftFieldInfo]
+    let normalizedNames: Set<String>
+}
+
+private struct SwiftFieldDescriptorCache {
+    let descriptors: [SwiftFieldDescriptorInfo]
+    let indicesByClassName: [String: [Int]]
+    let indicesByImageAndField: [String: [String: [Int]]]
+}
+
+/// App bundle 内已加载镜像的 __swift5_fieldmd 解析结果与倒排索引。FieldRecord 不含
+/// 实例偏移；名称与偏移由 reflection SPI 获取，ownership 只取这里的 mangling。
+private var swiftFieldDescriptorCache: SwiftFieldDescriptorCache?
+private var swiftFieldDescriptorImageCount: UInt32 = 0
+private let swiftFieldAppBundlePath = Bundle.main.bundlePath
+private let swiftFieldDescriptorLock = NSLock()
+
+private func normalizedSwiftStorageName(_ name: String) -> String {
+    let lazyStoragePrefix = "$__lazy_storage_$_"
+    var result = name.hasPrefix(lazyStoragePrefix)
+        ? String(name.dropFirst(lazyStoragePrefix.count))
+        : name
+    while result.hasPrefix("_") { result.removeFirst() }
+    return result
+}
+
+/// 懒加载属性的底层 ivar 名形如 `$__lazy_storage_$_viewModel`，展示时单独去掉
+/// `$__lazy_storage_$_` 前缀，只保留语义名 `viewModel`，与源码属性名一致。
+/// 仅用于展示，不影响字段匹配 / 所有权判定（那些走 normalizedSwiftStorageName）。
+private func stripLazyStoragePrefix(forDisplay name: String) -> String {
+    let lazyStoragePrefix = "$__lazy_storage_$_"
+    return name.hasPrefix(lazyStoragePrefix)
+        ? String(name.dropFirst(lazyStoragePrefix.count))
+        : name
+}
+
+/// 只解析 App bundle 内 dyld 镜像的 __swift5_fieldmd，保留每份字段表并建立索引。
+/// 只读 Mach-O 元数据，不反射、不触碰实例；按 _dyld_image_count 缓存重建。
+private func ensureSwiftFieldDescriptors() -> SwiftFieldDescriptorCache {
+    swiftFieldDescriptorLock.lock()
+    defer { swiftFieldDescriptorLock.unlock() }
+    let imageCount = _dyld_image_count()
+    if let cached = swiftFieldDescriptorCache, swiftFieldDescriptorImageCount == imageCount {
+        return cached
+    }
+    var descriptors: [SwiftFieldDescriptorInfo] = []
+    for imageIndex in 0..<imageCount {
+        guard let imageName = _dyld_get_image_name(imageIndex) else { continue }
+        let imagePath = String(cString: imageName)
+        guard imagePath == swiftFieldAppBundlePath
+                || imagePath.hasPrefix(swiftFieldAppBundlePath + "/") else { continue }
+        guard let headerPointer = _dyld_get_image_header(imageIndex) else { continue }
+        let header = UnsafeRawPointer(headerPointer).assumingMemoryBound(to: mach_header_64.self)
+        guard header.pointee.magic == MH_MAGIC_64 else { continue }
+        let slide = _dyld_get_image_vmaddr_slide(imageIndex)
+
+        // 收集本镜像全部 section 的运行时区间（校验字段描述符相对指针是否落在
+        // 已映射段内），并定位 __swift5_fieldmd section。
+        var ranges: [(start: UInt, end: UInt)] = []
+        var fieldSections: [(address: UInt, size: UInt64)] = []
+        var commandAddress = UnsafeRawPointer(headerPointer) + MemoryLayout<mach_header_64>.size
+        for _ in 0..<header.pointee.ncmds {
+            let command = commandAddress.assumingMemoryBound(to: load_command.self)
+            guard command.pointee.cmd == LC_SEGMENT_64 else {
+                commandAddress += Int(command.pointee.cmdsize)
+                continue
+            }
+            let segment = commandAddress.assumingMemoryBound(to: segment_command_64.self)
+            let sectionsBase = UnsafeRawPointer(segment) + MemoryLayout<segment_command_64>.size
+            for sectionIndex in 0..<segment.pointee.nsects {
+                let section = (sectionsBase + Int(sectionIndex) * MemoryLayout<section_64>.size)
+                    .assumingMemoryBound(to: section_64.self)
+                let start = UInt(bitPattern: slide) &+ UInt(section.pointee.addr)
+                if section.pointee.size > 0 {
+                    ranges.append((start, start &+ UInt(section.pointee.size)))
+                }
+                if sectionName(section) == "__swift5_fieldmd" {
+                    fieldSections.append((start, section.pointee.size))
+                }
+            }
+            commandAddress += Int(command.pointee.cmdsize)
+        }
+
+        for fieldSection in fieldSections {
+            guard let base = UnsafeRawPointer(bitPattern: fieldSection.address) else { continue }
+            let size = fieldSection.size
+            var offset: UInt64 = 0
+            // FieldDescriptor 头：MangledTypeName(4) Superclass(4) Kind(2)
+            // FieldRecordSize(2) NumFields(4)，随后 NumFields 条 FieldRecord。
+            while offset + 16 <= size {
+                let recordSize: UInt16 = (base + Int(offset + 10)).load(as: UInt16.self)
+                let numFields: UInt32 = (base + Int(offset + 12)).load(as: UInt32.self)
+                // recordSize / 字段数是 ABI 完整性校验；NumFields==0 是合法空描述符，
+                // 必须跳过并继续，否则会漏掉它后面所有类型。
+                guard recordSize >= 12, numFields <= 4096 else { break }
+                let recordBytes = UInt64(numFields) * UInt64(recordSize)
+                guard offset + 16 + recordBytes <= size else { break }
+
+                // 描述符首字 MangledTypeName（相对指针）是类的 mangled 名。纯文本形式
+                // 可作为精确匹配键；含 symbolic reference 时普通 demangle 会失败，后续
+                // 改用同镜像字段集合匹配，不能因此丢弃整份描述符。
+                let descriptorBase = base + Int(offset)
+                let keyDelta: Int32 = descriptorBase.load(as: Int32.self)
+                let keyTarget = UInt(bitPattern: descriptorBase) &+ UInt(bitPattern: Int(keyDelta))
+                let keyLimit = sectionByteLimit(keyTarget, ranges)
+                let classKey: String? = keyLimit > 0
+                    ? boundedCString(UnsafeRawPointer(bitPattern: keyTarget)!, limit: keyLimit).flatMap(demangleSwiftType)
+                    : nil
+                var fields: [String: SwiftFieldInfo] = [:]
+                for fieldIndex in 0..<numFields {
+                    // FieldRecord 紧跟 16 字节 FieldDescriptor 头；标准 ABI 记录只有
+                    // Flags / MangledTypeName / FieldName 三项，不包含实例偏移。
+                    let record = descriptorBase + 16 + Int(UInt64(fieldIndex) * UInt64(recordSize))
+                    let typeDelta: Int32 = (record + 4).load(as: Int32.self)
+                    let nameDelta: Int32 = (record + 8).load(as: Int32.self)
+                    // 相对指针以「存放该 int32 的地址」为基准。
+                    let typeTarget = UInt(bitPattern: record + 4) &+ UInt(bitPattern: Int(typeDelta))
+                    let nameTarget = UInt(bitPattern: record + 8) &+ UInt(bitPattern: Int(nameDelta))
+                    let typeLimit = sectionByteLimit(typeTarget, ranges)
+                    let nameLimit = sectionByteLimit(nameTarget, ranges)
+                    guard typeLimit > 0, nameLimit > 0 else { continue }
+                    guard let name = boundedCString(UnsafeRawPointer(bitPattern: nameTarget)!, limit: nameLimit) else { continue }
+                    let ownership = ownershipFromFieldType(UnsafeRawPointer(bitPattern: typeTarget)!, limit: typeLimit)
+                    fields[name] = SwiftFieldInfo(ownership: ownership)
+                }
+                if !fields.isEmpty {
+                    var normalizedFields: [String: SwiftFieldInfo] = [:]
+                    var ambiguousNames = Set<String>()
+                    for (name, info) in fields {
+                        let normalizedName = normalizedSwiftStorageName(name)
+                        if let existing = normalizedFields[normalizedName],
+                           existing.ownership != info.ownership {
+                            normalizedFields.removeValue(forKey: normalizedName)
+                            ambiguousNames.insert(normalizedName)
+                        } else if !ambiguousNames.contains(normalizedName) {
+                            normalizedFields[normalizedName] = info
+                        }
+                    }
+                    let normalizedNames = Set(normalizedFields.keys)
+                    descriptors.append(SwiftFieldDescriptorInfo(className: classKey,
+                                                                 imagePath: imagePath,
+                                                                 fields: fields,
+                                                                 normalizedFields: normalizedFields,
+                                                                 normalizedNames: normalizedNames))
+                }
+                // 16 字节头 + NumFields × FieldRecordSize，按 4 字节对齐推进。
+                offset += (16 + recordBytes + 3) & ~3
+            }
+        }
+    }
+    var indicesByClassName: [String: [Int]] = [:]
+    var indicesByImageAndField: [String: [String: [Int]]] = [:]
+    for (index, descriptor) in descriptors.enumerated() {
+        if let className = descriptor.className {
+            indicesByClassName[className, default: []].append(index)
+        }
+        for fieldName in descriptor.normalizedNames {
+            indicesByImageAndField[descriptor.imagePath, default: [:]][fieldName, default: []].append(index)
+        }
+    }
+    let cache = SwiftFieldDescriptorCache(descriptors: descriptors,
+                                          indicesByClassName: indicesByClassName,
+                                          indicesByImageAndField: indicesByImageAndField)
+    swiftFieldDescriptorCache = cache
+    swiftFieldDescriptorImageCount = imageCount
+    return cache
+}
+
+/// 相对指针目标必须落在当前镜像已映射的 section 内，返回该处到 section 末尾的可读上限。
+private func sectionByteLimit(_ target: UInt, _ ranges: [(start: UInt, end: UInt)]) -> UInt {
+    for range in ranges where target >= range.start && target < range.end {
+        return range.end &- target
+    }
+    return 0
+}
+
+/// section 名（sectname 固定 16 字节，可能未 NUL 结尾）。
+private func sectionName(_ section: UnsafePointer<section_64>) -> String {
+    withUnsafeBytes(of: section.pointee.sectname) { raw in
+        let pointer = raw.baseAddress!.assumingMemoryBound(to: CChar.self)
+        var length = 0
+        while length < 16 && pointer[length] != 0 { length += 1 }
+        return String(bytes: UnsafeRawBufferPointer(start: pointer, count: length), encoding: .utf8) ?? ""
+    }
+}
+
+/// segment 名（segname 同样是固定 16 字节）。
+private func segmentName(_ segment: UnsafePointer<segment_command_64>) -> String {
+    withUnsafeBytes(of: segment.pointee.segname) { raw in
+        let pointer = raw.baseAddress!.assumingMemoryBound(to: CChar.self)
+        var length = 0
+        while length < 16 && pointer[length] != 0 { length += 1 }
+        return String(bytes: UnsafeRawBufferPointer(start: pointer, count: length),
+                      encoding: .utf8) ?? ""
+    }
+}
+
+/// 在已知长度上限内读 NUL 结尾字符串；字段名都在 __swift5_reflstr，均为 ASCII。
+private func boundedCString(_ bytes: UnsafeRawPointer, limit: UInt) -> String? {
+    let pointer = bytes.assumingMemoryBound(to: UInt8.self)
+    let max = Int(limit)
+    var length = 0
+    while length < max && pointer[length] != 0 { length += 1 }
+    guard length > 0, length < max else { return nil }
+    return String(bytes: UnsafeRawBufferPointer(start: pointer, count: length), encoding: .utf8)
+}
+
+/// 字段类型 mangling 尾缀决定所有权：Xw=weak、Xo=unowned、Xu=unowned(unsafe)。
+/// 自定义类型会内嵌 symbolic reference（0x01...0x17 为 4 字节相对指针，
+/// 0x18...0x1F 为指针宽度绝对指针），payload 可能含 0，必须整体跳过。
+private func ownershipFromFieldType(_ bytes: UnsafeRawPointer, limit: UInt) -> ReferenceOwnership {
+    let pointer = bytes.assumingMemoryBound(to: UInt8.self)
+    let max = Int(limit)
+    var previous: UInt8 = 0
+    var current: UInt8 = 0
+    var index = 0
+    while index < max {
+        let byte = pointer[index]
+        if byte == 0 { break }
+        if byte >= 0x01, byte <= 0x17 {
+            guard index + 5 <= max else { break }
+            index += 5
+            continue
+        }
+        if byte >= 0x18, byte <= 0x1F {
+            let symbolicReferenceSize = 1 + MemoryLayout<UInt>.size
+            guard index + symbolicReferenceSize <= max else { break }
+            index += symbolicReferenceSize
+            continue
+        }
+        previous = current
+        current = byte
+        index += 1
+    }
+    if previous == UInt8(ascii: "X") {
+        switch current {
+        case UInt8(ascii: "w"): return .weak
+        case UInt8(ascii: "o"): return .unowned
+        case UInt8(ascii: "u"): return .unownedUnsafe
+        default: break
+        }
+    }
+    return .strong
+}
+
+/// 仅使用反射 SPI 的名称、类型和绝对实例偏移；isStrong 明确忽略，避免把它误当
+/// ownership 来源。相关符号在当前 iOS Swift runtime 导出，而类型级 _forEachField
+/// 在当前工具链不可用。
 private typealias ReflectionNameFreeC = @convention(c) (UnsafePointer<CChar>?) -> Void
 
 private struct SwiftFieldReflectionMetadata {
@@ -139,9 +427,20 @@ private func swiftRecursiveChildOffset(_ type: Any.Type, index: Int) -> Int
 @_silgen_name("swift_getMetadataKind")
 private func swiftMetadataKind(_ type: Any.Type) -> UInt
 
-/// Swift ABI MetadataKind::Function。只有函数字段需要补扫第二个字的
-/// context 指针，不能把所有多字字段都当成闭包。
 private let swiftFunctionMetadataKind: UInt = 0x302
+
+/// 可选闭包的字段元数据是 Optional（enum），不能只用 Function kind 判断。
+/// `Optional<() -> Void>` 仍占两个指针字，第二字才是持有捕获对象的上下文。
+/// 这里只识别明确的 Swift 厚函数签名；C / block 函数指针不是这种布局。
+private func hasSwiftFunctionContext(_ type: Any.Type) -> Bool {
+    if swiftMetadataKind(type) == swiftFunctionMetadataKind { return true }
+    let name = String(reflecting: type)
+    let prefix = "Swift.Optional<"
+    guard name.hasPrefix(prefix), name.hasSuffix(">") else { return false }
+    let wrapped = String(name.dropFirst(prefix.count).dropLast())
+    return (wrapped.hasPrefix("(") || wrapped.hasPrefix("@Sendable ("))
+        && wrapped.contains(" -> ")
+}
 
 /// ObjC ARC layout 串的起点不是固定的 isa 后 8 字节，而是当前类
 /// `word_align(instanceStart)`。使用 ObjC runtime 自身的 SPI 取值，
@@ -159,8 +458,9 @@ func enumerateHeapBlockRanges() -> [Range<UInt>] {
     var zoneCount: UInt32 = 0
     guard malloc_get_all_zones(mach_task_self_, nil, &zoneList, &zoneCount) == KERN_SUCCESS, zoneCount > 0 else { return [] }
     let scanContext = HeapScanContext()
-    let contextPointer = Unmanaged.passRetained(scanContext).toOpaque()
-    defer { Unmanaged.passRetained(scanContext).release() }
+    let retainedContext = Unmanaged.passRetained(scanContext)
+    let contextPointer = retainedContext.toOpaque()
+    defer { retainedContext.release() }
     for index in 0..<Int(zoneCount) {
         let zoneAddress = zoneList![index]
         guard let zonePointer = UnsafeRawPointer(bitPattern: UInt(zoneAddress)) else { continue }
@@ -191,32 +491,48 @@ struct HeapObject {
 /// 只有「运行时确实有元数据」时才给出确切结论；无法判定的一律标 unknown，
 /// 不把未知伪装成 strong。
 enum ReferenceOwnership: String, Codable {
-    /// 明确强持有：Swift 反射 isStrong / ObjC ivarLayout / block layout STRONG
+    /// 明确强持有：__swift5_fieldmd 无所有权尾缀 / ObjC ivarLayout STRONG / block layout STRONG
     case strong
-    /// 明确归类为 weak（Swift Optional 非强字段 / ObjC weak ivar / ObjC block weak capture）
+    /// 类存储属性或 stripped 的全局/静态槽没有可用所有权元数据时，按语言默认
+    /// strong 参与强引用图；报告明确标未确证，不冒充已有元数据证明。
+    /// 与 unknown 的区别：这里缺的是「确证」，不是「语义」。weak/unowned 是显式修饰，
+    /// 元数据能解析时仍以 fieldmd 为准；因此单独标注「未确证」，不冒充 confirmed strong。
+    case unconfirmedStrong
+    /// 明确归类为 weak（fieldmd Xw / ObjC weak ivar / ObjC block weak capture）
     case weak
-    /// Swift unowned / unowned(unsafe)（isStrong=false 且字段类型非 Optional）
+    /// Swift unowned（fieldmd Xo）
     case unowned
+    /// Swift unowned(unsafe) / unmanaged（fieldmd Xu）
+    case unownedUnsafe
     /// 只确认不是 strong：ObjC ivarLayout 之外的 @ ivar，无法继续区分
     /// weak / __unsafe_unretained
     case nonStrong
-    /// Swift 闭包捕获槽 / 桥接 block：运行时无 ownership 元数据，
-    /// strong 与 weak 捕获槽位完全相同，无法判定
+    /// 真正无法判定所有权：闭包捕获 / 容器透传无 capture 元数据、桥接
+    /// @convention(block) 不带 extended layout 等。堆内存形态上强捕获与
+    /// [weak x] 一致，保守标 unknown，展示但不参与循环检测，避免误报环。
     case unknown
 
     /// 是否作为潜在强引用边展示；unknown 仍需展示，避免丢失可能的引用关系。
-    var isStrongEdge: Bool { self == .strong || self == .unknown }
+    var isStrongEdge: Bool {
+        self == .strong || self == .unconfirmedStrong || self == .unknown
+    }
 
-    /// 循环引用必须全部由已确认的 strong 边构成，unknown 不参与。
-    var participatesInCycleDetection: Bool { self == .strong }
+    /// 找环只排除「语义上真的可能不是引用」的 unknown。unconfirmedStrong 是类
+    /// 存储属性（语言默认 strong），元数据缺失时若一并排除，普通强引用环会被
+    /// 整条切断（RoomViewController ⇄ RoomMsgContainView 即此类漏检）。
+    var participatesInCycleDetection: Bool {
+        self == .strong || self == .unconfirmedStrong
+    }
 
     var label: String {
         switch self {
         case .strong: return "strong"
+        case .unconfirmedStrong: return "疑似 strong（所有权元数据缺失）"
         case .weak: return "weak"
         case .unowned: return "unowned"
+        case .unownedUnsafe: return "unowned(unsafe)"
         case .nonStrong: return "非强（weak/unsafe）"
-        case .unknown: return "未知（捕获无元数据）"
+        case .unknown: return "未知（无可用所有权元数据）"
         }
     }
 }
@@ -232,6 +548,13 @@ struct ReferenceEdge {
     let ownership: ReferenceOwnership
 }
 
+private struct StaticStorageRange {
+    let start: UInt
+    let end: UInt
+    let imageName: String
+    let sectionName: String
+}
+
 // MARK: - 扫描器
 
 final class MemoryGraphScanner {
@@ -239,7 +562,7 @@ final class MemoryGraphScanner {
     /// 只保留类名匹配任一前缀的对象，控制图规模与噪音；空数组表示不过滤，保留堆上全部对象
     let classPrefixes: [String]
     /// 兜底用：额外视作 weak、不参与强引用图与循环检测的 ivar 名。
-    /// weak / unowned 已通过反射元数据（Swift 类）与 ivarLayout（ObjC 类）自动识别，
+    /// weak / unowned 已通过 __swift5_fieldmd（Swift 类）与 ivarLayout（ObjC 类）自动识别，
     /// 此列表仅在个别字段无法自动判定时手动补充。
     let weakIvarNames: Set<String>
 
@@ -260,19 +583,43 @@ final class MemoryGraphScanner {
 
     /// 地址 -> objects 下标
     private var objectIndexByAddress: [UInt: Int] = [:]
+    /// 未注册的 Swift 泛型类只读描述符名称；绝不交给 ObjC 的类名/继承 API。
+    private var unregisteredSwiftClassNames: [UInt: String] = [:]
     /// 非对象容器块地址 -> 块大小（透传扫描用）
     private var containerSizeByAddress: [UInt: Int] = [:]
     /// 类指针 -> [ivar 偏移: 属性名]
     private var ivarNameMaps: [UInt: [Int: String]] = [:]
-    /// 类指针 -> Swift 闭包 / 函数字段的 context 指针偏移。
-    /// 仅对 MetadataKind::Function 补扫，避免把 struct / existential 内部字
-    /// 误当成 strong 引用。
+    /// 静态 Swift metadata 指针 -> 已完成 fieldmd 关联的字段布局。多个 Aspects / KVO
+    /// 动态子类可能回退到同一个静态父类，复用后不再重复执行 reflection SPI 与字段匹配。
+    private var swiftReflectedLayouts: [UInt: (names: [Int: String],
+                                                ownership: [Int: ReferenceOwnership],
+                                                functions: Set<Int>)] = [:]
+    /// 类指针 -> Swift 函数及 Optional<函数> 字段的 context 指针偏移。
+    /// 不扫描其他 enum / struct / existential 的内部字，避免伪引用。
     private var swiftFunctionContextOffsets: [UInt: Set<Int>] = [:]
+    /// 闭包上下文 metadata 指针 -> 可定位捕获槽的所有权。
+    /// 与类的非强字段不同，闭包捕获住在 HeapLocalVariable 上下文里，靠
+    /// metadata 上的 CaptureDescriptor（__swift5_capture）解析，按 metadata 缓存
+    /// 即可去重（同一闭包类型的所有实例共享同一份捕获布局）。
+    private var swiftCaptureOwnershipCache: [UInt: [Int: ReferenceOwnership]] = [:]
+    /// 已加载镜像的 __swift5_capture / __swift5_typeref 段区间：校验 CaptureDescriptor
+    /// 与其 mangled 类型名确实落在已知只读反射段内，任何越界都退化为 unknown 兜底。
+    private var swiftCaptureRanges: [(start: UInt, end: UInt)]?
+    private var swiftTypeRefRanges: [(start: UInt, end: UInt)]?
+    private var swiftCaptureSectionImageCount: UInt32 = 0
+    /// 静态 metadata 指针 -> 容器类型。大量闭包实例共享 metadata，避免反向全堆扫描
+    /// 对每个实例都重复一次 vm_read_overwrite。
+    private var containerContextByMetadata: [UInt: ContainerContext] = [:]
     /// 类指针 -> weak ivar 偏移集合（ivarLayout 自动识别；Swift 类为空集）
     /// 类指针 -> 非强字段偏移及运行时可确定的持有语义
     private var nonStrongIvarOffsetMaps: [UInt: [Int: ReferenceOwnership]] = [:]
-    /// 容器块地址 -> 持有者（incoming 反查扫描时建立）
-    private var containerOwnerByAddress: [UInt: (owner: UInt, ivarName: String?)] = [:]
+    /// 同一类、同一实例大小的扫描槽位不变；捕获所有权仍逐实例覆盖。
+    private var scanLayouts: [UInt: [Int: [(offset: Int, ownerOffset: Int)]]] = [:]
+    /// 容器块地址 -> 持有者（incoming 反查扫描时建立）。必须透传字段 ownership，
+    /// 否则 unknown 字段经容器后会被默认误标为 strong。
+    private var containerOwnerByAddress: [UInt: (owner: UInt,
+                                                 ivarName: String?,
+                                                 ownership: ReferenceOwnership)] = [:]
     /// 容器块地址 -> 展示标签：incoming 反查中「无持有者容器」（如仅被 GCD 持有的
     /// block / Swift 闭包上下文）捕获对象时，以容器自身作为伪来源展示
     private var containerLabelByAddress: [UInt: String] = [:]
@@ -283,11 +630,15 @@ final class MemoryGraphScanner {
     /// 代码地址 -> 精简后的符号名；未命中的地址单独缓存，避免全堆反查反复 dladdr
     private var closureSymbolByAddress: [UInt: String] = [:]
     private var unresolvedClosureSymbolAddresses = Set<UInt>()
-    /// 主可执行文件名（basename）：仅对 App 自身二进制内的类做 Swift 反射。
-    /// Xcode 16+ Debug 构建可能把业务代码放进 `<executable>.debug.dylib`，它与
-    /// 主可执行文件同属可信 App 代码，也必须纳入；否则所有 Swift weak 字段会
-    /// 因反射被跳过而退化为 unknown。
-    private let mainExecutableName = Bundle.main.executablePath?.split(separator: "/").last.map(String.init)
+    /// App 镜像可写数据段中的全局 / static 存储槽。直接命中目标地址时，作为
+    /// 非堆的强引用根加入 incoming；地址 -> 标签供报告展示。
+    private var staticStorageRanges: [StaticStorageRange] = []
+    private var staticStorageImageCount: UInt32 = 0
+    private var staticRootLabelByAddress: [UInt: String] = [:]
+    private var staticIncomingByTarget: [UInt: [ReferenceEdge]]?
+    /// 反射 SPI 只用于 App bundle 内静态 Swift metadata 的字段名、类型和偏移；
+    /// 主程序、内嵌 framework / Pod 与 debug dylib 都要覆盖，系统镜像和堆上动态类不调用。
+    private let appBundlePath = Bundle.main.bundlePath
 
     /// 执行完整扫描：分类节点 -> 解析边 -> 找环。
     /// 全量边解析在大堆上耗时分钟级，排查单对象请改用 identifyObjects() + referenceReport(of:)
@@ -319,13 +670,17 @@ final class MemoryGraphScanner {
         /// 目标对象的非强字段（字段名 -> 语义）。来自字段元数据，
         /// 即使 unowned 槽位不指向对象地址（无法成边）也能准确列出
         let nonStrongFields: [String: ReferenceOwnership]
-        /// 强引用该对象的对象（逐层反查；weak / unowned 自动排除）
+        /// 引用该对象的对象（逐层反查），包含 strong / unknown / weak / unowned；
+        /// 只有参与找环的强引用来源（confirmed / 未确证 strong）继续作为下一层 target。
         let incoming: [ReferenceEdge]
         /// 来源对象地址 -> 反查层级（1 起）
         let incomingLevel: [UInt: Int]
         /// 报告中出现的地址 -> 类名（展示用）
         let classNameByAddress: [UInt: String]
-        /// 经过该对象的循环引用链（定向 DFS 找出，最多 5 条）
+        /// NotificationCenter 注册表长期持有的通知 block。它会强持有目标，
+        /// 但 token 与 block 在 Foundation 内部不一定形成可从目标返回的对象环。
+        let notificationRetentions: [ReferenceEdge]
+        /// 经过该对象的循环引用链（定向 DFS 找出，最多 50 条）
         let cycles: [CycleChain]
     }
 
@@ -349,15 +704,20 @@ final class MemoryGraphScanner {
 
         var allIncoming: [ReferenceEdge] = []
         var incomingLevel: [UInt: Int] = [:]
-        var visited: Set<UInt> = [address]
+        var seenIncomingEdges = Set<String>()
+        var visitedStrongSources: Set<UInt> = [address]
         var currentTargets: Set<UInt> = [address]
         for level in 1...max(1, maxDepth) {
             let levelEdges = incomingSweep(targets: currentTargets)
-            let newSources = Set(levelEdges.map { $0.from }).subtracting(visited)
-            // 已访问来源（含目标自身经反向路径）的边不重复收录，每个来源只在首次发现层出现
-            allIncoming.append(contentsOf: levelEdges.filter { newSources.contains($0.from) })
-            for source in newSources { incomingLevel[source] = level }
-            visited.formUnion(newSources)
+            for edge in levelEdges where seenIncomingEdges.insert(Self.edgeKey(edge)).inserted {
+                allIncoming.append(edge)
+                if incomingLevel[edge.from] == nil { incomingLevel[edge.from] = level }
+            }
+            let confirmedStrongSources = Set(levelEdges.lazy
+                .filter { $0.ownership.participatesInCycleDetection }
+                .map(\.from))
+            let newSources = confirmedStrongSources.subtracting(visitedStrongSources)
+            visitedStrongSources.formUnion(newSources)
             guard !newSources.isEmpty else { break }
             currentTargets = newSources
         }
@@ -370,6 +730,8 @@ final class MemoryGraphScanner {
         for edge in allIncoming {
             if let sourceIndex = objectIndexByAddress[edge.from] {
                 classNameByAddress[edge.from] = Self.displayName(of: objects[sourceIndex])
+            } else if let label = staticRootLabelByAddress[edge.from] {
+                classNameByAddress[edge.from] = label
             } else if let label = containerLabelByAddress[edge.from] {
                 // incoming 伪来源：无持有者的闭包 / block 堆块
                 classNameByAddress[edge.from] = label
@@ -377,12 +739,22 @@ final class MemoryGraphScanner {
         }
         let targetNameMap = ivarNameMap(for: target.classPointer)
         var nonStrongFields: [String: ReferenceOwnership] = [:]
-        for (offset, ownership) in nonStrongIvarOwnership(for: target.classPointer) {
+        for (offset, ownership) in nonStrongIvarOwnership(for: target.classPointer)
+        where ownership != .unconfirmedStrong {
+            // unconfirmedStrong 按默认 strong 参与找环，不属于「非强字段」
             if let name = fieldName(at: offset, in: targetNameMap) { nonStrongFields[name] = ownership }
         }
-        let cycles = cycleChains(through: address)
+        let cycles = cycleChains(through: address, directIncoming: allIncoming)
         for cycle in cycles {
             classNameByAddress.merge(cycle.classNameByAddress) { current, _ in current }
+        }
+        let notificationRetentions = allIncoming.filter { edge in
+            guard edge.ownership.participatesInCycleDetection,
+                  let sourceIndex = objectIndexByAddress[edge.from] else { return false }
+            let sourceName = Self.displayName(of: objects[sourceIndex])
+            let label = edge.ivarName ?? ""
+            return sourceName.contains("Block")
+                && (label.contains("Foundation.Notification") || label.contains("NSNotification"))
         }
         return ReferenceReport(address: address,
                                className: target.className,
@@ -393,20 +765,27 @@ final class MemoryGraphScanner {
                                incoming: allIncoming,
                                incomingLevel: incomingLevel,
                                classNameByAddress: classNameByAddress,
+                               notificationRetentions: notificationRetentions,
                                cycles: cycles)
     }
 
     /// 定向查找经过 address 的循环引用链：沿强引用边 DFS，只保留能回到目标的闭合路径。
     /// 与全图 Tarjan 不同，这里不构建全堆边表，只展开目标可达对象——保持按需查询的秒级性能。
+    /// 报告已经反查出直接回指目标的边，先与目标的 outgoing 边连接成两边环。
+    /// 这一步不消耗 DFS 节点预算；短环全部保留（至多 100 条），maxChains
+    /// 只限制较长的搜索结果，避免短环被旁路分支挤出报告。
     /// - Parameters:
-    ///   - maxDepth: 链最大边数（含回到目标的那条），默认 6
-    ///   - maxChains: 最多返回几条链，默认 5
-    ///   - maxObjects: DFS 展开对象总数上限，默认 200，防止大图退化成全量扫描
+    ///   - maxDepth: 链最大边数（含回到目标的那条），默认 10；Rx 订阅链会经过多个中间对象
+    ///   - maxChains: 较长环的结果上限，默认 50；直接回指短环另保留至多 100 条
+    ///   - maxObjects: DFS 展开对象总数上限，默认 2400；仍只扫描目标可达局部图
     func cycleChains(through address: UInt,
-                     maxDepth: Int = 6,
-                     maxChains: Int = 5,
-                     maxObjects: Int = 200) -> [CycleChain] {
-        guard objectIndexByAddress[address] != nil else { return [] }
+                     directIncoming: [ReferenceEdge] = [],
+                     maxDepth: Int = 10,
+                     maxChains: Int = 50,
+                     maxObjects: Int = 2_400) -> [CycleChain] {
+        guard let targetIndex = objectIndexByAddress[address] else { return [] }
+        let collectLimit = maxChains * 4
+        let shortChainLimit = 100
         var chains: [CycleChain] = []
         var seenChains = Set<String>()
         var visitedCount = 0
@@ -418,35 +797,195 @@ final class MemoryGraphScanner {
             return Self.displayName(of: objects[index])
         }
 
-        func visit(_ current: UInt, _ depth: Int) {
-            guard chains.count < maxChains, visitedCount < maxObjects, depth <= maxDepth,
-                  let index = objectIndexByAddress[current] else { return }
-            visitedCount += 1
-            for edge in directCycleReferences(from: objects[index]) {
-                guard chains.count < maxChains else { return }
-                if edge.to == address {
-                    // 闭合：path 中每个节点唯一（onPath 保证），构成简单环
-                    let chain = path + [edge]
-                    let key = chain.map { String($0.from) }.joined(separator: ">")
-                    guard seenChains.insert(key).inserted else { continue }
-                    var names: [UInt: String] = [:]
-                    for link in chain {
-                        names[link.from] = nameOf(link.from)
-                        names[link.to] = nameOf(link.to)
-                    }
-                    chains.append(CycleChain(edges: chain, classNameByAddress: names))
-                } else if depth < maxDepth, !onPath.contains(edge.to),
-                          objectIndexByAddress[edge.to] != nil {
-                    onPath.insert(edge.to)
-                    path.append(edge)
-                    visit(edge.to, depth + 1)
-                    path.removeLast()
-                    onPath.remove(edge.to)
+        func appendChain(_ chain: [ReferenceEdge]) {
+            let key = chain.map(Self.edgeKey).joined(separator: ">")
+            guard seenChains.insert(key).inserted else { return }
+            var names: [UInt: String] = [:]
+            for link in chain {
+                names[link.from] = nameOf(link.from)
+                names[link.to] = nameOf(link.to)
+            }
+            chains.append(CycleChain(edges: chain, classNameByAddress: names))
+        }
+
+        let directReturnEdges = Dictionary(grouping: directIncoming.filter {
+            $0.to == address && $0.ownership.participatesInCycleDetection
+        }, by: \.from)
+        // incoming 已经做过最多两层全堆反查。把这段反向结果预组装成回到目标的
+        // suffix；正向查环一旦走到 suffix 起点即可闭合，不再重复展开 Rx 中间节点。
+        var returnSuffixes = directReturnEdges.mapValues { $0.map { [$0] } }
+        for _ in 1..<maxDepth {
+            var additions: [UInt: [[ReferenceEdge]]] = [:]
+            for edge in directIncoming where edge.ownership.participatesInCycleDetection {
+                guard let suffixes = returnSuffixes[edge.to], edge.from != address else { continue }
+                for suffix in suffixes where !suffix.contains(where: { $0.from == edge.from }) {
+                    additions[edge.from, default: []].append([edge] + suffix)
+                }
+            }
+            guard !additions.isEmpty else { break }
+            var inserted = false
+            for (start, suffixes) in additions {
+                for suffix in suffixes {
+                    let key = suffix.map(Self.edgeKey).joined(separator: ">")
+                    let existing = returnSuffixes[start, default: []]
+                    guard !existing.contains(where: {
+                        $0.map(Self.edgeKey).joined(separator: ">") == key
+                    }) else { continue }
+                    returnSuffixes[start, default: []].append(suffix)
+                    inserted = true
+                }
+            }
+            if !inserted { break }
+        }
+        let firstEdges = directCycleReferences(from: objects[targetIndex])
+        var cycleReferenceCache: [UInt: [ReferenceEdge]] = [address: firstEdges]
+        var prioritizedReferenceCache: [UInt: [ReferenceEdge]] = [:]
+        for outward in firstEdges {
+            guard chains.count < shortChainLimit else { break }
+            if outward.to == address {
+                appendChain([outward])
+            } else if maxDepth >= 2 {
+                for returning in directReturnEdges[outward.to] ?? [] {
+                    guard chains.count < shortChainLimit else { break }
+                    appendChain([outward, returning])
                 }
             }
         }
-        visit(address, 1)
-        return chains
+        let precollectedCount = chains.count
+
+        let firstEdgesForSearch = interleavedCycleRootEdges(firstEdges)
+        func branchBudget(for edge: ReferenceEdge) -> Int {
+            guard let index = objectIndexByAddress[edge.to] else { return 0 }
+            let name = Self.displayName(of: objects[index])
+            if name.contains("DisposeBag") { return min(1_600, maxObjects) }
+            if name.contains("ViewModel") { return min(600, maxObjects) }
+            return max(24, maxObjects / max(1, firstEdgesForSearch.count))
+        }
+
+        func references(from node: UInt) -> [ReferenceEdge] {
+            if let cached = cycleReferenceCache[node] { return cached }
+            guard let index = objectIndexByAddress[node] else { return [] }
+            let references = directCycleReferences(from: objects[index])
+            cycleReferenceCache[node] = references
+            return references
+        }
+
+        func prioritized(_ edges: [ReferenceEdge]) -> [ReferenceEdge] {
+            edges.sorted { lhs, rhs in
+                func score(_ edge: ReferenceEdge) -> Int {
+                    if returnSuffixes[edge.to] != nil { return 0 }
+                    guard let index = objectIndexByAddress[edge.to] else { return 5 }
+                    let name = Self.displayName(of: objects[index])
+                    let isRetentionNode = name.contains("Relay") || name.contains("Subject")
+                        || name.contains("Observer") || name.contains("Disposable")
+                        || name.contains("Sink") || name.contains("DisposeBag")
+                    // incoming 两层反查已经知道真正回指目标的 Subject / Observer 地址。
+                    // 对同类 Relay 做一层廉价前瞻，优先 roomTravel 这类实际能接上
+                    // 回指 suffix 的分支，避免被 ViewModel 里大量无关 Relay 挤掉。
+                    if isRetentionNode,
+                       references(from: edge.to).contains(where: { returnSuffixes[$0.to] != nil }) {
+                        return 1
+                    }
+                    if isRetentionNode { return 2 }
+                    return edge.isIndirect ? 4 : 3
+                }
+                return score(lhs) < score(rhs)
+            }
+        }
+
+        func prioritizedReferences(from node: UInt) -> [ReferenceEdge] {
+            if let cached = prioritizedReferenceCache[node] { return cached }
+            let result = prioritized(references(from: node))
+            prioritizedReferenceCache[node] = result
+            return result
+        }
+
+        func visit(_ current: UInt, _ depth: Int, _ branchLimit: Int,
+                   _ branchVisited: inout Int) {
+            guard chains.count - precollectedCount < collectLimit,
+                  visitedCount < maxObjects, branchVisited < branchLimit,
+                  depth <= maxDepth,
+                  objectIndexByAddress[current] != nil else { return }
+            if let suffixes = returnSuffixes[current] {
+                for suffix in suffixes where path.count + suffix.count <= maxDepth {
+                    var suffixNodes = onPath
+                    var cursor = current
+                    let isSimple = suffix.enumerated().allSatisfy { position, edge in
+                        guard edge.from == cursor else { return false }
+                        cursor = edge.to
+                        if edge.to == address { return position == suffix.count - 1 }
+                        return suffixNodes.insert(edge.to).inserted
+                    }
+                    guard isSimple, cursor == address else { continue }
+                    appendChain(path + suffix)
+                }
+            }
+            visitedCount += 1
+            branchVisited += 1
+            let nextEdges = prioritizedReferences(from: current)
+            // 先收完本层所有直接回到目标的边（闭合即最短链），再展开其他分支，
+            // 避免深搜先占满额度把短环挤掉。
+            for edge in nextEdges where edge.to == address {
+                guard chains.count - precollectedCount < collectLimit else { break }
+                appendChain(path + [edge]) // path 中每个节点唯一（onPath 保证），构成简单环
+            }
+            for edge in nextEdges where edge.to != address {
+                guard chains.count - precollectedCount < collectLimit else { break }
+                guard depth < maxDepth, !onPath.contains(edge.to),
+                      objectIndexByAddress[edge.to] != nil else { continue }
+                onPath.insert(edge.to)
+                path.append(edge)
+                visit(edge.to, depth + 1, branchLimit, &branchVisited)
+                path.removeLast()
+                onPath.remove(edge.to)
+            }
+        }
+        for edge in firstEdgesForSearch {
+            guard visitedCount < maxObjects,
+                  chains.count - precollectedCount < collectLimit else { break }
+            if edge.to == address { continue } // 已由短环和直接闭合边收集
+            guard objectIndexByAddress[edge.to] != nil else { continue }
+            var branchVisited = 0
+            let budget = branchBudget(for: edge)
+            onPath.insert(edge.to)
+            path.append(edge)
+            if budget > 0 {
+                visit(edge.to, 2, budget, &branchVisited)
+            }
+            path.removeLast()
+            onPath.remove(edge.to)
+        }
+        let shortChains = chains.filter { $0.edges.count <= 2 }
+            .sorted { $0.edges.count < $1.edges.count }
+            .prefix(shortChainLimit)
+        let longerChains = chains.filter { $0.edges.count > 2 }
+            .sorted { $0.edges.count < $1.edges.count }
+            .prefix(maxChains)
+        return Array(shortChains) + Array(longerChains)
+    }
+
+    /// 容器属性可能一次展开数百个元素。按属性交错并把直接字段放前面，避免一个
+    /// 无关数组先耗尽预算，使后面的 disposeBag / viewModel 永远没有搜索机会。
+    private func interleavedCycleRootEdges(_ edges: [ReferenceEdge]) -> [ReferenceEdge] {
+        var groups: [[ReferenceEdge]] = []
+        var groupIndexByName: [String: Int] = [:]
+        for edge in edges {
+            let name = edge.ivarName ?? ""
+            if let index = groupIndexByName[name] {
+                groups[index].append(edge)
+            } else {
+                groupIndexByName[name] = groups.count
+                groups.append([edge])
+            }
+        }
+        var result: [ReferenceEdge] = []
+        result.reserveCapacity(edges.count)
+        var offset = 0
+        while result.count < edges.count {
+            for group in groups where offset < group.count { result.append(group[offset]) }
+            offset += 1
+        }
+        return result.filter { !$0.isIndirect } + result.filter(\.isIndirect)
     }
 
     /// 某个对象的「偏移 -> ownership」：类级元数据（属性三分） + 该 block 实例的
@@ -454,6 +993,20 @@ final class MemoryGraphScanner {
     private func ownershipMap(for object: HeapObject) -> [Int: ReferenceOwnership] {
         nonStrongIvarOwnership(for: object.classPointer)
             .merging(blockCaptureOwnership(for: object)) { _, blockLayout in blockLayout }
+    }
+
+    /// 读取引用地址。全堆扫描不持有来源对象，不能把 weak 槽交给 runtime 解引用：
+    /// 来源对象可能并发释放，objc_loadWeakRetained 会访问已经失效的 storage。
+    /// 类字段只做 vm_read 原始字读取（ObjC/桥接 weak 常可直接命中）；闭包捕获没有
+    /// 可靠逐槽 offset，weak 槽直接跳过，避免把任意内容误当 WeakReference。
+    private func referencedAddress(base: UnsafeRawPointer, offset: Int,
+                                   ownership: ReferenceOwnership,
+                                   allowRawWeakStorage: Bool) -> UInt {
+        guard ownership == .weak else {
+            return base.load(fromByteOffset: offset, as: UInt.self)
+        }
+        guard allowRawWeakStorage else { return 0 }
+        return safeReadUInt(UInt(bitPattern: base) + UInt(offset)) ?? 0
     }
 
     /// 源对象直接引用：ivar 直指对象 / 经容器缓冲透传。
@@ -473,10 +1026,13 @@ final class MemoryGraphScanner {
             if let ivarName = fieldName(at: offset, in: nameMap), weakIvarNames.contains(ivarName) {
                 edgeOwnership = .nonStrong // 手动白名单只能确认非强，无法二分 weak/unowned
             }
-            let word = base.load(fromByteOffset: offset, as: UInt.self)
+            let word = referencedAddress(base: base,
+                                         offset: offset,
+                                         ownership: edgeOwnership,
+                                         allowRawWeakStorage: true)
             guard word != 0, word & 1 == 0 else { continue }
-            let ivarName = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
             if let targetIndex = objectIndexByAddress[word] {
+                let ivarName = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
                 let edge = ReferenceEdge(from: object.address,
                                          to: objects[targetIndex].address,
                                          ivarName: ivarName,
@@ -490,6 +1046,7 @@ final class MemoryGraphScanner {
             } else if edgeOwnership.isStrongEdge,
                       let containerSize = containerSizeByAddress[word],
                       let containerBase = UnsafeRawPointer(bitPattern: word) {
+                let ivarName = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
                 updateClosureContainerLabel(at: word, ownerLabel: ivarName,
                                             classPointer: object.classPointer, offset: offset)
                 scanContainer(from: object.address,
@@ -507,7 +1064,98 @@ final class MemoryGraphScanner {
         directReferences(from: object).strong.filter(\.ownership.participatesInCycleDetection)
     }
 
-    /// 一次全堆定向扫描：找出强引用 targets 中任一地址的对象。
+    /// 缓存 App 主程序及内嵌 framework 的静态存储区。只扫描普通 / zerofill section；
+    /// ObjC / Swift metadata 虽也在数据段，但不会在运行时写入普通堆对象地址，命中目标
+    /// 时仍表示某个全局缓存或 runtime 根正在持有它。
+    private func ensureStaticStorageRanges() {
+        let imageCount = _dyld_image_count()
+        guard staticStorageImageCount != imageCount else { return }
+        staticStorageImageCount = imageCount
+        staticStorageRanges = []
+        staticIncomingByTarget = nil
+        staticRootLabelByAddress = [:]
+        let dataSegments: Set<String> = ["__DATA", "__DATA_CONST", "__DATA_DIRTY",
+                                         "__AUTH", "__AUTH_CONST"]
+        for imageIndex in 0..<imageCount {
+            guard let imageNamePointer = _dyld_get_image_name(imageIndex),
+                  let headerPointer = _dyld_get_image_header(imageIndex) else { continue }
+            let imagePath = String(cString: imageNamePointer)
+            guard imagePath == appBundlePath || imagePath.hasPrefix(appBundlePath + "/") else { continue }
+            let header = UnsafeRawPointer(headerPointer).assumingMemoryBound(to: mach_header_64.self)
+            guard header.pointee.magic == MH_MAGIC_64 else { continue }
+            let slide = _dyld_get_image_vmaddr_slide(imageIndex)
+            var commandAddress = UnsafeRawPointer(headerPointer) + MemoryLayout<mach_header_64>.size
+            for _ in 0..<header.pointee.ncmds {
+                let command = commandAddress.assumingMemoryBound(to: load_command.self)
+                defer { commandAddress += Int(command.pointee.cmdsize) }
+                guard command.pointee.cmd == LC_SEGMENT_64 else { continue }
+                let segment = commandAddress.assumingMemoryBound(to: segment_command_64.self)
+                guard dataSegments.contains(segmentName(segment)) else { continue }
+                let sectionsBase = UnsafeRawPointer(segment) + MemoryLayout<segment_command_64>.size
+                for sectionIndex in 0..<segment.pointee.nsects {
+                    let section = (sectionsBase + Int(sectionIndex) * MemoryLayout<section_64>.size)
+                        .assumingMemoryBound(to: section_64.self)
+                    let type = section.pointee.flags & UInt32(SECTION_TYPE)
+                    guard type == UInt32(S_REGULAR) || type == UInt32(S_ZEROFILL),
+                          section.pointee.size >= UInt64(MemoryLayout<UInt>.size) else { continue }
+                    let start = UInt(bitPattern: slide) &+ UInt(section.pointee.addr)
+                    let image = URL(fileURLWithPath: imagePath).lastPathComponent
+                    staticStorageRanges.append(StaticStorageRange(
+                        start: start,
+                        end: start &+ UInt(section.pointee.size),
+                        imageName: image,
+                        sectionName: sectionName(section)))
+                }
+            }
+        }
+    }
+
+    /// 查找 App 静态存储槽对 targets 的直接引用。精确符号命中可确认是变量存储；
+    /// stripped 构建只能保留 section + 槽地址，ownership 标未确证 strong。
+    private func staticIncoming(targets: Set<UInt>, seen: inout Set<String>,
+                                into result: inout [ReferenceEdge]) {
+        ensureStaticStorageRanges()
+        if staticIncomingByTarget == nil {
+            var index: [UInt: [ReferenceEdge]] = [:]
+            for range in staticStorageRanges {
+                let alignedStart = (range.start + 7) & ~UInt(7)
+                guard alignedStart < range.end else { continue }
+                for address in stride(from: alignedStart, to: range.end - 7, by: 8) {
+                    guard let pointer = UnsafeRawPointer(bitPattern: address) else { continue }
+                    let value = pointer.load(as: UInt.self)
+                    guard objectIndexByAddress[value] != nil else { continue }
+                    var info = Dl_info()
+                    var variableName: String?
+                    var exactSymbol = false
+                    if dladdr(pointer, &info) != 0, let symbol = info.dli_sname,
+                       UInt(bitPattern: info.dli_saddr) == address {
+                        var raw = String(cString: symbol)
+                        if raw.hasPrefix("_$s") { raw.removeFirst() }
+                        variableName = demangle(raw) ?? raw
+                        exactSymbol = true
+                    }
+                    let slotOffset = address &- range.start
+                    let slotName = variableName.map { "全局/静态变量 · \($0)" }
+                        ?? "全局/静态槽 · \(range.sectionName)+0x\(String(slotOffset, radix: 16))"
+                    staticRootLabelByAddress[address] = "全局/静态根 · \(range.imageName) · \(range.sectionName)"
+                    index[value, default: []].append(ReferenceEdge(
+                        from: address,
+                        to: value,
+                        ivarName: slotName,
+                        isIndirect: false,
+                        ownership: exactSymbol ? .strong : .unconfirmedStrong))
+                }
+            }
+            staticIncomingByTarget = index
+        }
+        for target in targets {
+            for edge in staticIncomingByTarget?[target] ?? [] {
+                appendEdge(edge, seen: &seen, into: &result)
+            }
+        }
+    }
+
+    /// 一次全堆定向扫描：找出引用 targets 中任一地址的对象，保留完整 ownership。
     /// 对象 ivar 直指 → 直接边；ivar 指向容器且容器元素命中 → 记在容器持有者头上的间接边。
     /// 扫描中顺带建立「容器 -> 持有者」映射，后续层级反查复用
     private func incomingSweep(targets: Set<UInt>) -> [ReferenceEdge] {
@@ -521,22 +1169,30 @@ final class MemoryGraphScanner {
             for (offset, ownership) in scanOffsets(nameMap: nameMap, usableSize: usableSize,
                                                    classPointer: object.classPointer,
                                                    ownershipByOffset: ownershipMap(for: object)) {
-                guard ownership.isStrongEdge else { continue }
-                if let ivarName = fieldName(at: offset, in: nameMap), weakIvarNames.contains(ivarName) { continue }
-                let word = base.load(fromByteOffset: offset, as: UInt.self)
+                var edgeOwnership = ownership
+                if let ivarName = fieldName(at: offset, in: nameMap), weakIvarNames.contains(ivarName) {
+                    edgeOwnership = .nonStrong
+                }
+                let word = referencedAddress(base: base,
+                                             offset: offset,
+                                             ownership: edgeOwnership,
+                                             allowRawWeakStorage: true)
                 guard word != 0, word & 1 == 0 else { continue }
-                let referenceLabel = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
                 if targets.contains(word) {
+                    let referenceLabel = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
                     appendEdge(ReferenceEdge(from: object.address,
                                              to: word,
                                              ivarName: referenceLabel,
                                              isIndirect: false,
-                                             ownership: ownership),
+                                             ownership: edgeOwnership),
                                seen: &seen, into: &result)
-                } else if containerSizeByAddress[word] != nil, containerOwnerByAddress[word] == nil {
+                } else if edgeOwnership.isStrongEdge,
+                          containerSizeByAddress[word] != nil,
+                          containerOwnerByAddress[word] == nil {
+                    let referenceLabel = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
                     updateClosureContainerLabel(at: word, ownerLabel: referenceLabel,
                                                 classPointer: object.classPointer, offset: offset)
-                    containerOwnerByAddress[word] = (object.address, referenceLabel)
+                    containerOwnerByAddress[word] = (object.address, referenceLabel, edgeOwnership)
                 }
             }
         }
@@ -546,6 +1202,7 @@ final class MemoryGraphScanner {
                                ivarName: owner.ivarName,
                                containerAddress: containerAddress,
                                targets: targets,
+                               ownership: owner.ownership,
                                seen: &seen, into: &result)
             } else {
                 // 无持有者：仅被 GCD / timer 等系统设施持有的 block / Swift 闭包上下文，
@@ -572,6 +1229,7 @@ final class MemoryGraphScanner {
                                seen: &seen, into: &result)
             }
         }
+        staticIncoming(targets: targets, seen: &seen, into: &result)
         return result
     }
 
@@ -584,11 +1242,16 @@ final class MemoryGraphScanner {
         guard depth >= 1, containerAddress != source,
               let base = UnsafeRawPointer(bitPattern: containerAddress) else { return }
         let context = containerContext(base)
-        let effective: ReferenceOwnership = context == .buffer ? ownership : .unknown
+        let captureOwnership = context == .closure
+            ? swiftCaptureOwnership(for: containerAddress) : [:]
         let size = min(containerSizeByAddress[containerAddress] ?? 0, Int(malloc_size(base)))
         var offset = 8
         while offset + 8 <= size {
-            let word = base.load(fromByteOffset: offset, as: UInt.self)
+            let effective = captureOwnership[offset] ?? (context == .buffer ? ownership : .unknown)
+            let word = referencedAddress(base: base,
+                                         offset: offset,
+                                         ownership: effective,
+                                         allowRawWeakStorage: false)
             if word != 0, word & 1 == 0 {
                 if targets.contains(word) {
                     appendEdge(ReferenceEdge(from: source,
@@ -598,8 +1261,12 @@ final class MemoryGraphScanner {
                                              ownership: effective),
                                seen: &seen, into: &into)
                 } else if depth > 1, word != source, containerSizeByAddress[word] != nil {
+                    let nestedLabel = nestedClosureLabel(parentBase: base,
+                                                         offset: offset,
+                                                         nestedAddress: word,
+                                                         fallback: ivarName)
                     sweepContainer(from: source,
-                                   ivarName: ivarName,
+                                   ivarName: nestedLabel,
                                    containerAddress: word,
                                    targets: targets,
                                    ownership: effective,
@@ -621,7 +1288,7 @@ final class MemoryGraphScanner {
     /// 符号化失败时仍保留属性名 / 捕获槽位，不影响引用关系与 ownership 判定。
     private func referenceLabel(for object: HeapObject, at offset: Int,
                                 base: UnsafeRawPointer, nameMap: [Int: String]) -> String? {
-        let field = fieldName(at: offset, in: nameMap)
+        let field = fieldName(at: offset, in: nameMap).map { stripLazyStoragePrefix(forDisplay: $0) }
         if swiftFunctionContextOffsets[object.classPointer]?.contains(offset) == true,
            offset >= MemoryLayout<UInt>.size {
             let functionAddress = base.load(fromByteOffset: offset - MemoryLayout<UInt>.size,
@@ -639,7 +1306,35 @@ final class MemoryGraphScanner {
             }
             return capture
         }
+        // 未注册的 RxSwift 泛型类无法安全调用 reflectionMirror，因而没有字段名。
+        // Swift 厚函数仍是相邻的「代码指针 + context 指针」；当当前字明确指向
+        // 闭包 context 时，用前一字恢复具体 closure #N 所在的方法。
+        if field == nil, offset >= MemoryLayout<UInt>.size {
+            let contextAddress = base.load(fromByteOffset: offset, as: UInt.self)
+            if let contextBase = UnsafeRawPointer(bitPattern: contextAddress),
+               containerSizeByAddress[contextAddress] != nil,
+               containerContext(contextBase) == .closure {
+                let functionAddress = base.load(fromByteOffset: offset - MemoryLayout<UInt>.size,
+                                                as: UInt.self)
+                if let symbol = closureSymbol(at: functionAddress) {
+                    return "RxSwift 闭包 · \(symbol)"
+                }
+            }
+        }
         return field
+    }
+
+    /// 闭包 context 里还可能捕获另一份厚函数（RxSwift 包装用户 onNext 时即如此）。
+    /// 每深入一层都用相邻代码指针更新标签，最终落到业务源码的 closure #N。
+    private func nestedClosureLabel(parentBase: UnsafeRawPointer, offset: Int,
+                                    nestedAddress: UInt, fallback: String?) -> String? {
+        guard offset >= MemoryLayout<UInt>.size,
+              let nestedBase = UnsafeRawPointer(bitPattern: nestedAddress),
+              containerContext(nestedBase) == .closure else { return fallback }
+        let functionAddress = parentBase.load(fromByteOffset: offset - MemoryLayout<UInt>.size,
+                                              as: UInt.self)
+        guard let symbol = closureSymbol(at: functionAddress) else { return fallback }
+        return "RxSwift 闭包 · \(symbol)"
     }
 
     /// 闭包 context 本身没有 isa；当它来自具名函数字段时，把符号化结果同步到
@@ -688,6 +1383,17 @@ final class MemoryGraphScanner {
         }
     }
 
+    /// Swift 类的 class_getName 通常返回「模块名.类名」；但当类名含私有判别符
+    /// （_TtC...P33_...）等无法展开为模块点号形式时，会返回原始 mangled 符号，
+    /// 例如 `_TtC14SawaLudoCommonP33_348D8DBE804BDD42304F3DEEDA8C1BE720EnterRoomFlowManager`。
+    /// 这里用运行时 swift_demangle 还原为可读类名，避免图中出现不可读的 mangled 符号。
+    /// 仅对以 _Tt 开头的 mangled 名尝试还原，普通「模块名.类名」原样返回；
+    /// demangle 失败则回退原始名，不丢对象。
+    private func demangleClassNameIfNeeded(_ name: String) -> String {
+        guard name.hasPrefix("_Tt") else { return name }
+        return demangle(name) ?? name
+    }
+
     // MARK: 节点识别
 
     private func buildNodes(blockRanges: [Range<UInt>]) {
@@ -701,13 +1407,31 @@ final class MemoryGraphScanner {
         for index in 0..<Int(classCount) {
             registeredClasses.insert(classListBase.load(fromByteOffset: index * 8, as: UInt.self))
         }
+        var unrealizedClassNames: [UInt: String] = [:]
+        var rejectedClassPointers = Set<UInt>()
         for range in blockRanges {
             // NSObject 至少 16 字节（isa + 一个指针位）
             guard range.count >= 16, let base = UnsafeRawPointer(bitPattern: range.lowerBound) else { continue }
             let isaWord = base.load(as: UInt.self)
             guard isaWord != 0, isaWord & taggedPointerMask == 0 else { continue }
             let classPointer = isaWord & isaClassMask
-            guard registeredClasses.contains(classPointer) else {
+            let isRegistered = registeredClasses.contains(classPointer)
+            let rawSwiftName: String?
+            if isRegistered {
+                rawSwiftName = nil
+            } else if let cached = unrealizedClassNames[classPointer] {
+                rawSwiftName = cached
+            } else if rejectedClassPointers.contains(classPointer) {
+                rawSwiftName = nil
+            } else {
+                rawSwiftName = unregisteredSwiftClassName(classPointer)
+                if let rawSwiftName {
+                    unrealizedClassNames[classPointer] = rawSwiftName
+                } else {
+                    rejectedClassPointers.insert(classPointer)
+                }
+            }
+            guard isRegistered || rawSwiftName != nil else {
                 // 无有效 isa 的块：Swift 闭包上下文（首字是元数据指针而非类 isa）、
                 // Swift Array/Dictionary 缓冲区等容器。捕获单个对象的 Swift 闭包
                 // 上下文仅 16 字节（元数据 8 + 捕获 8），阈值不能高于 16
@@ -717,9 +1441,16 @@ final class MemoryGraphScanner {
                 }
                 continue
             }
-            let anyClass: AnyClass = unsafeBitCast(classPointer, to: AnyClass.self)
-            // Swift 类的 class_getName 返回 "模块名.类名"，取最后一段做前缀匹配
-            let className = String(cString: class_getName(anyClass))
+            // class_getName 自身会调用 objc_class::demangledName；未注册 metadata
+            // 即使部分布局看似有效也可能在该路径崩溃，只保留描述符里的原始名称。
+            let className: String
+            if let rawSwiftName {
+                unregisteredSwiftClassNames[classPointer] = rawSwiftName
+                className = rawSwiftName
+            } else {
+                let anyClass: AnyClass = unsafeBitCast(classPointer, to: AnyClass.self)
+                className = demangleClassNameIfNeeded(String(cString: class_getName(anyClass)))
+            }
             let bareClassName = className.split(separator: ".").last.map(String.init) ?? className
             if classPrefixes.isEmpty || classPrefixes.contains(where: { bareClassName.hasPrefix($0) || className.hasPrefix($0) }) {
                 objectIndexByAddress[range.lowerBound] = objects.count
@@ -727,13 +1458,13 @@ final class MemoryGraphScanner {
                                           size: Int(range.count),
                                           classPointer: classPointer,
                                           className: className,
-                                          isBlock: isBlockClass(classPointer, className: className),
+                                          isBlock: isRegistered && isBlockClass(classPointer, className: className),
                                           weaklyReferenced: isaWord & 0x4 != 0))
             } else {
                 // 被前缀过滤掉的正常对象（如 NSArray、NSString、__NSMallocBlock__），
                 // 同样作为容器透传，使 [MGObserver] 存进 NSArray / 闭包捕获的场景不丢边
                 containerSizeByAddress[range.lowerBound] = Int(range.count)
-                if isBlockClass(classPointer, className: className) {
+                if isRegistered && isBlockClass(classPointer, className: className) {
                     blockContainerAddresses.insert(range.lowerBound)
                     let invokeAddress = range.count >= 24 ? base.load(fromByteOffset: 16, as: UInt.self) : 0
                     if let symbol = closureSymbol(at: invokeAddress) {
@@ -812,7 +1543,7 @@ final class MemoryGraphScanner {
                 case 3: assign(count, .strong)
                 case 4: assign(count, .unknown)                  // byref
                 case 5: assign(count, .weak)
-                case 6: assign(count, .unowned)                  // __unsafe_unretained ≈ unowned
+                case 6: assign(count, .unownedUnsafe)            // __unsafe_unretained / unmanaged ≈ unowned(unsafe)
                 default: break
                 }
             }
@@ -821,8 +1552,8 @@ final class MemoryGraphScanner {
     }
 
     /// Swift 闭包上下文判定：首字指向 HeapLocalVariableMetadata（kind = 0x400）。
-    /// 这类容器里的捕获槽没有 ownership 元数据，透传边必须标 unknown；
-    /// 数组 / 字典等普通缓冲区的元素仍是 strong。
+    /// 其捕获槽所有权由 swiftCaptureOwnership 经 __swift5_capture 解析；解析不到的槽
+    /// 回落 unknown；数组 / 字典等普通缓冲区的元素仍是 strong。
     /// 安全读取任意地址的 8 字节：走 Mach vm_read_overwrite，无效地址返回 nil
     /// 而不是 EXC_BAD_ACCESS。dladdr 只确认「地址落在某个 image 范围内」，
     /// 不保证可读——真机实测容器首字为垃圾值 0x10d010101030110 时，
@@ -871,8 +1602,167 @@ final class MemoryGraphScanner {
         guard meta != 0, meta % 8 == 0,
               let metaPointer = UnsafeRawPointer(bitPattern: meta),
               malloc_zone_from_ptr(metaPointer) == nil else { return .buffer }
+        if let cached = containerContextByMetadata[meta] { return cached }
         guard let kind = safeReadUInt(meta) else { return .unreadable }
-        return (kind & 0xfff) == 0x400 ? .closure : .buffer // MetadataKind::HeapLocalVariable
+        let context: ContainerContext = (kind & 0xfff) == 0x400 ? .closure : .buffer
+        containerContextByMetadata[meta] = context
+        return context // MetadataKind::HeapLocalVariable
+    }
+
+    // MARK: Swift 闭包捕获所有权（__swift5_capture，唯一可靠来源）
+
+    /// 收集所有 dyld 镜像的 __swift5_capture 与 __swift5_typeref 段区间，用于校验
+    /// CaptureDescriptor 与其 mangled 类型名确实落在已知只读反射段内。只读 Mach-O
+    /// 元数据、不反射、不触碰实例，按 _dyld_image_count 缓存重建。
+    private func ensureSwiftCaptureSections() -> (capture: [(start: UInt, end: UInt)],
+                                                 typeRef: [(start: UInt, end: UInt)]) {
+        let imageCount = _dyld_image_count()
+        if let capture = swiftCaptureRanges,
+           let typeRef = swiftTypeRefRanges,
+           swiftCaptureSectionImageCount == imageCount {
+            return (capture, typeRef)
+        }
+        var captureRanges: [(start: UInt, end: UInt)] = []
+        var typeRefRanges: [(start: UInt, end: UInt)] = []
+        for imageIndex in 0..<imageCount {
+            guard let headerPointer = _dyld_get_image_header(imageIndex) else { continue }
+            let header = UnsafeRawPointer(headerPointer).assumingMemoryBound(to: mach_header_64.self)
+            guard header.pointee.magic == MH_MAGIC_64 else { continue }
+            let slide = _dyld_get_image_vmaddr_slide(imageIndex)
+            var commandAddress = UnsafeRawPointer(headerPointer) + MemoryLayout<mach_header_64>.size
+            for _ in 0..<header.pointee.ncmds {
+                let command = commandAddress.assumingMemoryBound(to: load_command.self)
+                guard command.pointee.cmd == LC_SEGMENT_64 else {
+                    commandAddress += Int(command.pointee.cmdsize)
+                    continue
+                }
+                let segment = commandAddress.assumingMemoryBound(to: segment_command_64.self)
+                let sectionsBase = UnsafeRawPointer(segment) + MemoryLayout<segment_command_64>.size
+                for sectionIndex in 0..<segment.pointee.nsects {
+                    let section = (sectionsBase + Int(sectionIndex) * MemoryLayout<section_64>.size)
+                        .assumingMemoryBound(to: section_64.self)
+                    guard section.pointee.size > 0 else { continue }
+                    let start = UInt(bitPattern: slide) &+ UInt(section.pointee.addr)
+                    let range = (start, start &+ UInt(section.pointee.size))
+                    let name = sectionName(section)
+                    if name == "__swift5_capture" { captureRanges.append(range) }
+                    else if name == "__swift5_typeref" { typeRefRanges.append(range) }
+                }
+                commandAddress += Int(command.pointee.cmdsize)
+            }
+        }
+        swiftCaptureRanges = captureRanges
+        swiftTypeRefRanges = typeRefRanges
+        swiftCaptureSectionImageCount = imageCount
+        return (captureRanges, typeRefRanges)
+    }
+
+    private func addressInRanges(_ address: UInt, _ ranges: [(start: UInt, end: UInt)]) -> Bool {
+        ranges.contains { address >= $0.start && address < $0.end }
+    }
+
+    /// 相对指针（int32，以自身地址为基准）解析，全程 vm_read 守卫。
+    private func readRelativePointer(_ fieldAddress: UInt) -> UInt? {
+        guard let raw = safeReadInt32(fieldAddress) else { return nil }
+        return fieldAddress &+ UInt(bitPattern: Int(raw))
+    }
+
+    /// 安全读取 4 字节无符号 / 有符号整数（CaptureDescriptor 字段、相对偏移）。
+    private func safeReadUInt32(_ address: UInt) -> UInt32? {
+        guard address != 0 else { return nil }
+        var value: UInt32 = 0
+        var outSize: vm_size_t = 0
+        let result = withUnsafeMutableBytes(of: &value) { buffer -> kern_return_t in
+            vm_read_overwrite(mach_task_self_,
+                              vm_address_t(address),
+                              vm_size_t(4),
+                              vm_address_t(UInt(bitPattern: buffer.baseAddress)),
+                              &outSize)
+        }
+        guard result == KERN_SUCCESS, outSize == 4 else { return nil }
+        return value
+    }
+
+    private func safeReadInt32(_ address: UInt) -> Int32? {
+        guard address != 0 else { return nil }
+        var value: Int32 = 0
+        var outSize: vm_size_t = 0
+        let result = withUnsafeMutableBytes(of: &value) { buffer -> kern_return_t in
+            vm_read_overwrite(mach_task_self_,
+                              vm_address_t(address),
+                              vm_size_t(4),
+                              vm_address_t(UInt(bitPattern: buffer.baseAddress)),
+                              &outSize)
+        }
+        guard result == KERN_SUCCESS, outSize == 4 else { return nil }
+        return value
+    }
+
+    /// CaptureTypeRecord 与 FieldRecord 使用同一套 symbolic mangled type；ownership
+    /// 只看跳过 symbolic payload 后的末尾 Xw/Xo/Xu，不能把类型内部 token 当后缀。
+    private func ownershipFromCaptureType(_ bytes: UnsafeRawPointer,
+                                          limit: UInt) -> ReferenceOwnership {
+        ownershipFromFieldType(bytes, limit: limit)
+    }
+
+    /// Swift 闭包捕获上下文（HeapLocalVariable，kind=0x400）的逐槽所有权。
+    /// 唯一可靠来源是 metadata 上的 CaptureDescriptor（位于 __swift5_capture）：
+    ///   metadata 偏移 8 = OffsetToFirstCapture；偏移 16 = CaptureDescription 绝对指针。
+    /// CaptureDescriptor 的 12 字节头后紧跟 CaptureTypeRecord 相对指针数组。
+    /// 所有读都经 vm_read 守卫，且 descTarget 必须落在 __swift5_capture、mangled 必须
+    /// 落在 __swift5_typeref，任一不达标即返回空——退化为 scanContainer/sweepContainer
+    /// 现有的 unknown 兜底，绝不崩溃或误标。按 metadata 指针缓存去重。
+    private func swiftCaptureOwnership(for contextAddress: UInt) -> [Int: ReferenceOwnership] {
+        // 首字即 metadata 指针（容器自身是有效堆内存，containerContext 已判定 kind=0x400）
+        guard let meta = safeReadUInt(contextAddress), meta & 7 == 0,
+              let metaPointer = UnsafeRawPointer(bitPattern: meta),
+              malloc_zone_from_ptr(metaPointer) == nil,
+              let kind = safeReadUInt(meta), (kind & 0xfff) == 0x400 else { return [:] }
+        if let cached = swiftCaptureOwnershipCache[meta] { return cached }
+        let result = computeSwiftCaptureOwnership(meta: meta, contextAddress: contextAddress)
+        swiftCaptureOwnershipCache[meta] = result
+        return result
+    }
+
+    /// 实际解析：metadata 已通过 kind 校验后，逐捕获读取 CaptureDescriptor 并判定所有权。
+    private func computeSwiftCaptureOwnership(meta: UInt, contextAddress: UInt) -> [Int: ReferenceOwnership] {
+        guard let containerBase = UnsafeRawPointer(bitPattern: contextAddress) else { return [:] }
+        let containerSize = Int(malloc_size(containerBase))
+        guard containerSize >= 24 else { return [:] }
+        // OffsetToFirstCapture：捕获数据相对上下文对象起始的偏移（含 16 字节 HeapObject 头）
+        let offsetToFirstCapture = safeReadUInt32(meta + 8) ?? 0
+        guard offsetToFirstCapture >= 16, offsetToFirstCapture &+ 7 < UInt(containerSize) else { return [:] }
+        // HeapLocalVariableMetadata.CaptureDescription 是进程内绝对指针。
+        guard let descTarget = safeReadUInt(meta + 16), descTarget != 0 else { return [:] }
+        let (captureRanges, typeRefRanges) = ensureSwiftCaptureSections()
+        guard addressInRanges(descTarget, captureRanges) else { return [:] }
+        guard let numFields = safeReadUInt32(descTarget), numFields > 0, numFields <= 64 else { return [:] }
+        // CaptureDescriptor：NumCaptureTypes / NumMetadataSources / NumBindings 共 12 字节，
+        // 随后内联 NumCaptureTypes 个 CaptureTypeRecord（每个 4 字节相对指针）。
+        let typeRefsBase = descTarget + 12
+        // NecessaryBindings 位于闭包头和捕获值之间；泛型 RxSwift 闭包常有多个
+        // metadata/witness 绑定，不能把第一个绑定误当成第一个捕获槽。
+        let bindingCount = safeReadUInt32(descTarget + 8) ?? 0
+        guard bindingCount <= 64 else { return [:] }
+        var result: [Int: ReferenceOwnership] = [:]
+        var captureOffset = Int(offsetToFirstCapture) + Int(bindingCount) * MemoryLayout<UInt>.size
+        for index in 0..<Int(numFields) {
+            let slot = typeRefsBase &+ UInt(index * 4)
+            guard let mangledAddr = readRelativePointer(slot) else { break }
+            let typeLimit = sectionByteLimit(mangledAddr, typeRefRanges)
+            guard typeLimit > 0,
+                  let typeBytes = UnsafeRawPointer(bitPattern: mangledAddr),
+                  captureOffset + MemoryLayout<UInt>.size <= containerSize else { break }
+            let ownership = ownershipFromCaptureType(typeBytes, limit: typeLimit)
+            result[captureOffset] = ownership
+
+            // CaptureDescriptor 不记录逐槽偏移。weak / unowned 存储可确定为一个指针字，
+            // 因而能继续定位下一项；无尾缀 strong 也可能是多字值，当前项起点可靠，
+            // 但其后的偏移不可证明，必须停止并让通用扫描把后续边标为 unknown。
+            guard ownership != .strong else { break }
+            captureOffset += MemoryLayout<UInt>.size
+        }
+        return result
     }
 
     // MARK: 引用边解析
@@ -914,13 +1804,303 @@ final class MemoryGraphScanner {
         return (superclassSize + wordSize - 1) & ~(wordSize - 1)
     }
 
+    /// 不触发运行时 realize 的前提下判定类是否为 Swift 类：读 objc_class 的
+    /// class_data_bits_t（arm64 偏移 0x20：isa(8) superclass(8) cache(16) bits(8)）
+    /// 低 2 位 FAST_IS_SWIFT_STABLE / FAST_IS_SWIFT_LEGACY 标志。Swift 类不能走
+    /// class_copyIvarList 等强制 realize 的 API（会崩在 libobjc 的 safe_ro）。
+    private func isSwiftClassViaBits(_ classPointer: UInt) -> Bool {
+        guard let bits = safeReadUInt(classPointer &+ 0x20) else { return false }
+        return bits & 0x3 != 0
+    }
+
+    /// 类名 API 自身会在损坏或未完全 realize 的 metadata 上崩溃；Swift/ObjC
+    /// 分流只读 metadata，不调用 class_getName。动态子类沿原始 superclass 指针
+    /// 回溯，仍可落到其 Swift 父类。
+    private func isSwiftClassMetadata(_ classPointer: UInt) -> Bool {
+        var current = classPointer
+        var visited = Set<UInt>()
+        for _ in 0..<8 {
+            guard current != 0, current & 7 == 0, visited.insert(current).inserted else { break }
+            if isSwiftClassViaBits(current) { return true }
+            if let descriptor = safeReadUInt(current &+ 64), descriptor & 3 == 0,
+               let descriptorPointer = UnsafeRawPointer(bitPattern: descriptor),
+               let flags = safeReadUInt32(descriptor), flags & 0x1f == 0x10,
+               malloc_zone_from_ptr(descriptorPointer) == nil {
+                var image = Dl_info()
+                if dladdr(descriptorPointer, &image) != 0 { return true }
+            }
+            guard let superclass = safeReadUInt(current &+ 8), superclass != current else { break }
+            current = superclass
+        }
+        return false
+    }
+
+    /// 泛型特化类可能尚未进入 objc_copyClassList。仅以 Swift 类标志、
+    /// 只读 ClassDescriptor 和有界原始名称共同识别；不调用任何 ObjC Class API。
+    private func unregisteredSwiftClassName(_ classPointer: UInt) -> String? {
+        guard classPointer != 0, classPointer & 7 == 0,
+              isSwiftClassViaBits(classPointer),
+              let descriptor = safeReadUInt(classPointer &+ 64), descriptor & 3 == 0,
+              malloc_zone_from_ptr(UnsafeRawPointer(bitPattern: descriptor)) == nil,
+              let flags = safeReadUInt32(descriptor), flags & 0x1f == 0x10,
+              let relativeName = safeReadUInt32(descriptor &+ 8) else { return nil }
+        var image = Dl_info()
+        guard let descriptorPointer = UnsafeRawPointer(bitPattern: descriptor),
+              dladdr(descriptorPointer, &image) != 0 else { return nil }
+        let signedOffset = Int64(Int32(bitPattern: relativeName))
+        let nameField = descriptor &+ 8
+        guard signedOffset >= 0 ? nameField <= UInt.max - UInt(signedOffset)
+                                : nameField >= UInt(-signedOffset) else { return nil }
+        let nameAddress = signedOffset >= 0 ? nameField + UInt(signedOffset)
+                                            : nameField - UInt(-signedOffset)
+        var bytes: [UInt8] = []
+        for index in 0..<128 {
+            guard let byte = safeReadByte(nameAddress &+ UInt(index)) else { return nil }
+            if byte == 0 { break }
+            guard byte >= 0x21, byte <= 0x7e else { return nil }
+            bytes.append(byte)
+        }
+        guard !bytes.isEmpty, bytes.count < 128 else { return nil }
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
+    /// Swift 类字段映射：名称、类型和绝对实例偏移来自 reflectionMirror SPI，
+    /// ownership 只按字段名匹配 __swift5_fieldmd。反射的 isStrong 明确不参与判定。
+    /// 仅反射已注册且可安全定位的类；未注册泛型类保留节点，但退回原始字扫描。
+    private func ivarNameMapFromFieldmd(classPointer: UInt, runtimeClass: AnyClass) -> [Int: String] {
+        var map: [Int: String] = [:]
+        var ownershipByOffset: [Int: ReferenceOwnership] = [:]
+        var functionContextOffsets = Set<Int>()
+        guard let reflectionClass = safeReflectionClass(startingAt: runtimeClass) else {
+            swiftFunctionContextOffsets[classPointer] = functionContextOffsets
+            ivarNameMaps[classPointer] = map
+            nonStrongIvarOffsetMaps[classPointer] = ownershipByOffset
+            return map
+        }
+        let reflectionClassPointer = UInt(bitPattern: unsafeBitCast(reflectionClass,
+                                                                    to: UnsafeRawPointer.self))
+        if let cached = swiftReflectedLayouts[reflectionClassPointer] {
+            swiftFunctionContextOffsets[classPointer] = cached.functions
+            ivarNameMaps[classPointer] = cached.names
+            nonStrongIvarOffsetMaps[classPointer] = cached.ownership
+            return cached.names
+        }
+        let reflectionType: Any.Type = reflectionClass
+        let fieldCount = swiftRecursiveChildCount(reflectionType)
+        var reflectedFields: [ReflectedSwiftField] = []
+        if fieldCount > 0, fieldCount <= 1024 {
+            for index in 0..<fieldCount {
+                var metadata = SwiftFieldReflectionMetadata(name: nil,
+                                                            freeFunc: nil,
+                                                            isStrong: false,
+                                                            isVar: false)
+                let fieldType = swiftRecursiveChildMetadata(reflectionType,
+                                                            index: index,
+                                                            fieldMetadata: &metadata)
+                let name = metadata.name.map { String(cString: $0) }
+                metadata.freeFunc?(metadata.name)
+                guard let name else { continue }
+                let offset = swiftRecursiveChildOffset(reflectionType, index: index)
+                guard offset > 0 else { continue }
+                if map[offset] == nil { map[offset] = name }
+                reflectedFields.append(ReflectedSwiftField(name: name, offset: offset, type: fieldType))
+            }
+        }
+        // 未注册泛型 metadata 不交给 class_getName / class_getSuperclass。
+        // 字段偏移仍由 Swift 反射取得，fieldmd 无法安全关联时标未确证 strong。
+        let fieldInfoByName = unregisteredSwiftClassNames[reflectionClassPointer] == nil
+            ? swiftFieldInfoByName(startingAt: reflectionClass,
+                                   reflectedNames: reflectedFields.map(\.name)) : [:]
+        for field in reflectedFields {
+            if let fieldInfo = fieldInfoByName[field.name] {
+                switch fieldInfo.ownership {
+                case .strong:
+                    ownershipByOffset.removeValue(forKey: field.offset)
+                case .weak, .unowned, .unownedUnsafe:
+                    ownershipByOffset[field.offset] = fieldInfo.ownership
+                case .unconfirmedStrong:
+                    ownershipByOffset[field.offset] = .unconfirmedStrong
+                case .nonStrong, .unknown:
+                    ownershipByOffset[field.offset] = .unknown
+                }
+            } else {
+                // 描述符未匹配（类名含 symbolic reference、跨类同名字段歧义）时，
+                // 字段本身仍是类存储属性，Swift/ObjC 默认 strong。此前一刀切标
+                // unknown，会让整条强引用环因「unknown 不参与找环」被漏检
+                // （RoomViewController ⇄ RoomMsgContainView 即此类）。这里按
+                // 未确证 strong 放行，报告页明确标注，不冒充 confirmed。
+                ownershipByOffset[field.offset] = .unconfirmedStrong
+            }
+
+            // 闭包也可能内嵌在值类型属性中（例如 RxSwift.Bag 的 _value0）。
+            // 只定位函数值的 context 字，不把 struct 的其他内部字推断为强引用。
+            functionContextOffsets.formUnion(swiftFunctionContexts(in: field.type,
+                                                                  at: field.offset,
+                                                                  depth: 0))
+        }
+        swiftFunctionContextOffsets[classPointer] = functionContextOffsets
+        ivarNameMaps[classPointer] = map
+        nonStrongIvarOffsetMaps[classPointer] = ownershipByOffset
+        swiftReflectedLayouts[reflectionClassPointer] = (map, ownershipByOffset, functionContextOffsets)
+        return map
+    }
+
+    private func swiftFunctionContexts(in type: Any.Type, at baseOffset: Int, depth: Int) -> Set<Int> {
+        if hasSwiftFunctionContext(type) { return [baseOffset + MemoryLayout<UInt>.size] }
+        guard depth < 4, swiftMetadataKind(type) == 0x200 else { return [] } // struct
+        let count = swiftRecursiveChildCount(type)
+        guard count > 0, count <= 64 else { return [] }
+        var offsets = Set<Int>()
+        for index in 0..<count {
+            var metadata = SwiftFieldReflectionMetadata(name: nil,
+                                                        freeFunc: nil,
+                                                        isStrong: false,
+                                                        isVar: false)
+            let childType = swiftRecursiveChildMetadata(type, index: index,
+                                                       fieldMetadata: &metadata)
+            metadata.freeFunc?(metadata.name)
+            let childOffset = swiftRecursiveChildOffset(type, index: index)
+            guard childOffset >= 0 else { continue }
+            offsets.formUnion(swiftFunctionContexts(in: childType,
+                                                   at: baseOffset + childOffset,
+                                                   depth: depth + 1))
+        }
+        return offsets
+    }
+
+    /// 合并当前类与父类的 fieldmd 信息；子类同名字段优先。recursiveChild* 返回
+    /// 继承链字段的绝对偏移，因此 ownership 查找也必须覆盖整条静态继承链。
+    private func swiftFieldInfoByName(startingAt runtimeClass: AnyClass,
+                                      reflectedNames: [String]) -> [String: SwiftFieldInfo] {
+        let descriptorCache = ensureSwiftFieldDescriptors()
+        let descriptors = descriptorCache.descriptors
+        var result: [String: SwiftFieldInfo] = [:]
+        var ambiguousExactNames = Set<String>()
+        var classKeys = Set<String>()
+        var imagePaths = Set<String>()
+        var currentClass: AnyClass? = runtimeClass
+        while let anyClass = currentClass {
+            classKeys.insert(String(cString: class_getName(anyClass)))
+            classKeys.insert(String(reflecting: anyClass))
+            if let imagePath = class_getImageName(anyClass).map({ String(cString: $0) }),
+               imagePath == appBundlePath || imagePath.hasPrefix(appBundlePath + "/") {
+                imagePaths.insert(imagePath)
+            }
+            if anyClass == NSObject.self { break }
+            currentClass = class_getSuperclass(anyClass)
+        }
+
+        // 能解析出类名时优先精确关联当前类与父类。
+        let exactDescriptorIndices = Set(classKeys.flatMap {
+            descriptorCache.indicesByClassName[$0] ?? []
+        })
+        for name in reflectedNames {
+            let infos = exactDescriptorIndices.compactMap {
+                matchingFieldInfo(for: name, in: descriptors[$0])
+            }
+            let ownershipValues = Set(infos.map { $0.ownership.rawValue })
+            if ownershipValues.count == 1 {
+                result[name] = infos[0]
+            } else if !infos.isEmpty {
+                ambiguousExactNames.insert(name)
+            }
+        }
+
+        // symbolic class name 无法普通 demangle 时，按 swift_eval 的字段集合方案回退；
+        // 额外限定同一 Mach-O 镜像，并优先选择与本类反射字段重合最多的描述符。
+        let reflectedSet = Set(reflectedNames.map(normalizedSwiftStorageName))
+        for name in reflectedNames where result[name] == nil && !ambiguousExactNames.contains(name) {
+            let normalizedName = normalizedSwiftStorageName(name)
+            let candidateIndices = Set(imagePaths.flatMap {
+                descriptorCache.indicesByImageAndField[$0]?[normalizedName] ?? []
+            })
+            var candidates: [(info: SwiftFieldInfo, score: Int, fullMatch: Bool)] = []
+            for index in candidateIndices {
+                let descriptor = descriptors[index]
+                guard let info = matchingFieldInfo(for: name, in: descriptor) else { continue }
+                let score = descriptor.normalizedNames.intersection(reflectedSet).count
+                guard score > 0 else { continue }
+                candidates.append((info, score, descriptor.normalizedNames.isSubset(of: reflectedSet)))
+            }
+            let requireFullMatch = candidates.contains { $0.fullMatch }
+            var bestScore = -1
+            var bestInfo: SwiftFieldInfo?
+            var bestOwnership: ReferenceOwnership?
+            var ownershipConflict = false
+            for candidate in candidates where !requireFullMatch || candidate.fullMatch {
+                if candidate.score > bestScore {
+                    bestScore = candidate.score
+                    bestInfo = candidate.info
+                    bestOwnership = candidate.info.ownership
+                    ownershipConflict = false
+                } else if candidate.score == bestScore,
+                          bestOwnership != candidate.info.ownership {
+                    ownershipConflict = true
+                }
+            }
+            if !ownershipConflict, let bestInfo { result[name] = bestInfo }
+        }
+        return result
+    }
+
+    private func matchingFieldInfo(for fieldName: String,
+                                   in descriptor: SwiftFieldDescriptorInfo) -> SwiftFieldInfo? {
+        if let exact = descriptor.fields[fieldName] { return exact }
+        let normalizedName = normalizedSwiftStorageName(fieldName)
+        return descriptor.normalizedFields[normalizedName]
+    }
+
+    private func isHeapResidentMetadata(_ classPointer: UInt) -> Bool {
+        guard let pointer = UnsafeRawPointer(bitPattern: classPointer) else { return true }
+        return malloc_zone_from_ptr(pointer) != nil
+    }
+
+    private func safeReflectionClass(startingAt runtimeClass: AnyClass) -> AnyClass? {
+        var currentClass: AnyClass? = runtimeClass
+        while let anyClass = currentClass {
+            let pointer = UInt(bitPattern: unsafeBitCast(anyClass, to: UnsafeRawPointer.self))
+            if unregisteredSwiftClassNames[pointer] != nil {
+                // 描述符足以识别类节点，却不能证明动态 metadata 可安全反射。
+                // 真机会在 recursiveCount 主动断点；不碰 ObjC 父类 API。
+                return nil
+            }
+            if !isHeapResidentMetadata(pointer), isAppReflectionImage(anyClass) { return anyClass }
+            if anyClass == NSObject.self { break }
+            currentClass = class_getSuperclass(anyClass)
+        }
+        return nil
+    }
+
+    private func isAppReflectionImage(_ anyClass: AnyClass) -> Bool {
+        guard let imagePath = class_getImageName(anyClass).map({ String(cString: $0) }) else { return false }
+        return imagePath == appBundlePath || imagePath.hasPrefix(appBundlePath + "/")
+    }
+
     private func ivarNameMap(for classPointer: UInt) -> [Int: String] {
         if let cached = ivarNameMaps[classPointer] { return cached }
+        if let rawName = unregisteredSwiftClassNames[classPointer],
+           rawName.hasPrefix("_ContiguousArrayStorage")
+            || rawName.hasPrefix("_ArrayStorage")
+            || rawName.hasPrefix("_DictionaryStorage") {
+            // 标准库集合元素尾随在类实例之后，不在反射字段列表里。
+            // 此类存储必须逐字扫描，否则 DisposeBag 的元素会消失。
+            ivarNameMaps[classPointer] = [:]
+            nonStrongIvarOffsetMaps[classPointer] = [:]
+            return [:]
+        }
+        let runtimeClass: AnyClass = unsafeBitCast(classPointer, to: AnyClass.self)
+        // Swift 类必须先于 ObjC 路径分流：class_copyIvarList / class_getIvarLayout /
+        // class_getInstanceSize 会强制 realize；class_getName 也可能在 demangledName
+        // 崩溃。只读 Swift 标志、类描述符和原始父类指针判断。
+        if unregisteredSwiftClassNames[classPointer] != nil || isSwiftClassMetadata(classPointer) {
+            return ivarNameMapFromFieldmd(classPointer: classPointer, runtimeClass: runtimeClass)
+        }
+        // —— 以下 ObjC 类路径：ObjC 类在 dyld 加载时已 realize，以下 API 安全 ——
         var map: [Int: String] = [:]
         var encodings: [Int: String] = [:]
         var strongOffsets = Set<Int>()
         var weakLayoutOffsets = Set<Int>()
-        var currentClass: AnyClass? = unsafeBitCast(classPointer, to: AnyClass.self)
+        var currentClass: AnyClass? = runtimeClass
         while let anyClass = currentClass {
             var ivarCount: UInt32 = 0
             if let ivars = class_copyIvarList(anyClass, &ivarCount) {
@@ -943,12 +2123,9 @@ final class MemoryGraphScanner {
             if anyClass == NSObject.self { break }
             currentClass = class_getSuperclass(anyClass)
         }
-        // 关键事实（实测）：Swift 类的 ivar 用 ivar_getTypeEncoding 得到空字符串，
-        // 且 class_getIvarLayout / class_getWeakIvarLayout 都返回 nil。
-        // 因此 Swift 类一旦拿不到反射元数据，就既没有 isStrong 也没有 ivarLayout，
-        // 若默认 strong 会把 weak 属性误标成 strong（真机报告里的实际错误）。
-        // 处理：ObjC 类用两份布局精确标注；Swift 类反射不可用时标 unknown 而非 strong。
-        let hasSwiftIvarSignature = encodings.values.contains { $0.isEmpty }
+        // ObjC 类：__weak 与 __unsafe_unretained 的类型编码相同（'@'），由两份
+        // 布局区分：weak 布局命中即 weak；strong 布局未覆盖的 @ 字段只能确认
+        // 非强（nonStrong）。空编码兜底标 unknown（不冒充 strong）。
         var ownershipByOffset: [Int: ReferenceOwnership] = [:]
         for (offset, encoding) in encodings where offset > 0 {
             if encoding.hasPrefix("@") {
@@ -962,68 +2139,6 @@ final class MemoryGraphScanner {
                 ownershipByOffset[offset] = .unknown
             }
         }
-        // 反射调用安全守卫（真机 EXC_BAD_ACCESS 崩在 ClassImpl::recursiveCount，
-        // 崩溃类指针均落在堆地址区间）：
-        // 1) Aspects / KVO 等运行时动态子类的 metadata 位于 malloc 堆，不能直接
-        //    反射；向上找到最近的静态 App 父类，使用父类字段元数据和绝对偏移。
-        // 2) 仅对主可执行文件及同名 debug dylib 内的静态类做反射：预编译 Pod /
-        //    系统动态库存在元数据兼容性风险。
-        // 注意：不能因为 class_getName 无模块点号就跳过反射——@objc(自定义名)
-        // 的 Swift 类同样无点号，跳过会让它的 weak 属性失去唯一可用的 isStrong
-        // 来源。用「ivar 类型编码为空」识别 Swift 类，对它们也尝试反射；
-        // 纯 ObjC 类（编码为 '@' 等）反射返回 0 字段，本就不尝试，零风险。
-        let runtimeClass: AnyClass = unsafeBitCast(classPointer, to: AnyClass.self)
-        guard let reflectionClass = safeReflectionClass(startingAt: runtimeClass) else {
-            // 反射不可用：Swift 字段保持 unknown（不冒充 strong），ObjC 字段走布局结论
-            ivarNameMaps[classPointer] = map
-            nonStrongIvarOffsetMaps[classPointer] = ownershipByOffset
-            return map
-        }
-        let reflectionClassName = String(cString: class_getName(reflectionClass))
-        guard reflectionClassName.contains(".") || hasSwiftIvarSignature else {
-            ivarNameMaps[classPointer] = map
-            nonStrongIvarOffsetMaps[classPointer] = ownershipByOffset
-            return map
-        }
-        // Swift 定义类的反射元数据逐字段给出 isStrong：weak 与 unowned 均为 false。
-        // 本工具按字段形态统一归类：Optional 非强字段标 weak，非 Optional 标 unowned；
-        // `unowned var value: T?` 也按 weak 展示，不再单列 nonStrong。
-        // 反射偏移是实例绝对偏移、与 ivar_getOffset 对齐，且自动含父类字段。
-        let reflectionType: Any.Type = reflectionClass
-        let fieldCount = swiftRecursiveChildCount(reflectionType)
-        var functionContextOffsets = Set<Int>()
-        if fieldCount > 0, fieldCount <= 256 {
-            for index in 0..<fieldCount {
-                var info = SwiftFieldReflectionMetadata(name: nil,
-                                                        freeFunc: nil,
-                                                        isStrong: true,
-                                                        isVar: false)
-                let fieldType = swiftRecursiveChildMetadata(reflectionType, index: index, fieldMetadata: &info)
-                let reflectionOffset = swiftRecursiveChildOffset(reflectionType, index: index)
-                // 反射偏移与 ivar 偏移在属性包装器 / 继承字段等场景可能不一致；
-                // 用字段名反查 ivar 偏移，两个偏移都写入，避免 weak 字段漏标
-                let fieldName = info.name.map { String(cString: $0) }
-                info.freeFunc?(info.name)
-                let matchedIvarOffset: Int? = fieldName.flatMap { name in
-                    self.ivarOffset(forReflectionFieldName: name, in: map)
-                }
-                var offsets: Set<Int> = [reflectionOffset]
-                if let matchedIvarOffset { offsets.insert(matchedIvarOffset) }
-                let isOptional = "\(fieldType)".hasPrefix("Optional<")
-                let isFunction = swiftMetadataKind(fieldType) == swiftFunctionMetadataKind
-                for offset in offsets {
-                    if info.isStrong {
-                        ownershipByOffset.removeValue(forKey: offset)
-                    } else {
-                        ownershipByOffset[offset] = isOptional ? .weak : .unowned
-                    }
-                    if isFunction {
-                        functionContextOffsets.insert(offset + MemoryLayout<UInt>.size)
-                    }
-                }
-            }
-        }
-        swiftFunctionContextOffsets[classPointer] = functionContextOffsets
         ivarNameMaps[classPointer] = map
         nonStrongIvarOffsetMaps[classPointer] = ownershipByOffset
         return map
@@ -1033,68 +2148,6 @@ final class MemoryGraphScanner {
     private func nonStrongIvarOwnership(for classPointer: UInt) -> [Int: ReferenceOwnership] {
         _ = ivarNameMap(for: classPointer) // 顺带填充缓存
         return nonStrongIvarOffsetMaps[classPointer] ?? [:]
-    }
-
-    /// Swift 字段描述通常使用源码名 `delegate`，ObjC runtime 在部分继承 / 暴露
-    /// 场景会把同一存储字段命名为 `_delegate`。反射偏移理论上可直接使用，但
-    /// ObjC heritage 的类会从 ivar 表取偏移；把 ownership 同步写入实际 ivar
-    /// 偏移，避免 weak 字段在最终扫描时因命名差异回退成 strong。
-    private func ivarOffset(forReflectionFieldName fieldName: String,
-                            in nameMap: [Int: String]) -> Int? {
-        if let exact = nameMap.first(where: { $0.value == fieldName })?.key { return exact }
-        let normalizedFieldName = normalizedStorageName(fieldName)
-        let matches = nameMap.filter { normalizedStorageName($0.value) == normalizedFieldName }
-        return matches.count == 1 ? matches.first?.key : nil
-    }
-
-    private func normalizedStorageName(_ name: String) -> String {
-        let lazyStoragePrefix = "$__lazy_storage_$_"
-        var result = name.hasPrefix(lazyStoragePrefix)
-            ? String(name.dropFirst(lazyStoragePrefix.count))
-            : name
-        while result.hasPrefix("_") { result.removeFirst() }
-        return result
-    }
-
-    /// 类元数据是否位于 malloc 管理的堆内存（动态创建的类、泛型特化注册等）。
-    /// 类指针可能不在堆块起始处（类与元类同块分配），不能用块起始地址集合判断；
-    /// malloc_zone_from_ptr 对任意 malloc 内存（含块内偏移）都返回归属 zone，
-    /// 静态元数据在二进制数据段 / shared cache，不归属任何 zone。
-    private func isHeapResidentMetadata(_ classPointer: UInt) -> Bool {
-        guard let pointer = UnsafeRawPointer(bitPattern: classPointer) else { return true }
-        return malloc_zone_from_ptr(pointer) != nil
-    }
-
-    /// Aspects / KVO 通过 objc_allocateClassPair 创建的动态子类没有可反射的 Swift
-    /// 类型描述符，但其继承字段仍沿用静态父类的绝对偏移。向上寻找最近的 App 静态类，
-    /// 既避开堆 metadata 崩溃，也能恢复动态子类继承属性的 strong / weak 信息。
-    private func safeReflectionClass(startingAt runtimeClass: AnyClass) -> AnyClass? {
-        var currentClass: AnyClass? = runtimeClass
-        while let anyClass = currentClass {
-            let pointer = UInt(bitPattern: unsafeBitCast(anyClass, to: UnsafeRawPointer.self))
-            if !isHeapResidentMetadata(pointer), isAppReflectionImage(anyClass) {
-                return anyClass
-            }
-            if anyClass == NSObject.self { break }
-            currentClass = class_getSuperclass(anyClass)
-        }
-        return nil
-    }
-
-    /// 类所属镜像路径（主可执行文件 / 各动态库），用于限定反射范围
-    private func reflectionImagePath(_ anyClass: AnyClass) -> String? {
-        class_getImageName(anyClass).map { String(cString: $0) }
-    }
-
-    /// Xcode 的 Debug Dylib Support 会让 `class_getImageName` 返回
-    /// `AppName.debug.dylib`，而 `Bundle.main.executablePath` 仍是 `AppName`。
-    /// 只按这两个 basename 放行，不扩大到 Pods / 系统动态库，保留反射防崩边界。
-    private func isAppReflectionImage(_ anyClass: AnyClass) -> Bool {
-        guard let mainExecutableName else { return true }
-        guard let imageName = reflectionImagePath(anyClass)?.split(separator: "/").last.map(String.init) else {
-            return false
-        }
-        return imageName == mainExecutableName || imageName == "\(mainExecutableName).debug.dylib"
     }
 
     private func buildEdges() {
@@ -1125,36 +2178,52 @@ final class MemoryGraphScanner {
 
     /// 解析扫描字偏移，返回（偏移, 持有语义）：
     /// - 有 ivar 信息时用已知字段偏移（过滤非 8 字节对齐）；
-    /// - Swift 反射确认为 function 的字段额外补扫内部字：函数值宽 16 字节
+    /// - Swift 反射确认为函数或 Optional<函数> 的字段额外补扫内部字：值宽 16 字节
     ///   （函数指针 + 上下文指针），上下文指针位于字段偏移 +8 处，
     ///   仅当该字不属于下一个字段时补扫。ObjC 类不补扫，避免扫进
     ///   struct ivar 内部或填充区产生噪音；
-    /// - 无 ivar 信息时回退从 isa 之后的逐字全扫
+    /// - 无 ivar 信息时回退从 isa 之后的逐字全扫；未注册 Swift 类的槽位
+    ///   所有权只能标未确证 strong，不冒充 fieldmd 已确认的 strong
     private func scanOffsets(nameMap: [Int: String], usableSize: Int, classPointer: UInt,
                              ownershipByOffset: [Int: ReferenceOwnership]) -> [(offset: Int, ownership: ReferenceOwnership)] {
-        func ownership(_ offset: Int) -> ReferenceOwnership { ownershipByOffset[offset] ?? .strong }
-        var result: [(offset: Int, ownership: ReferenceOwnership)] = []
+        if let layout = scanLayouts[classPointer]?[usableSize] {
+            return layout.map { slot in
+                (slot.offset,
+                 ownershipByOffset[slot.offset] ?? ownershipByOffset[slot.ownerOffset] ?? .strong)
+            }
+        }
+        var slots: [(offset: Int, ownerOffset: Int)] = []
+        let fallbackOwnership: ReferenceOwnership = unregisteredSwiftClassNames[classPointer] == nil
+            ? .strong : .unconfirmedStrong
         // 偏移 0 恒为 isa（block 类会暴露名为 isa 的 ivar），不是引用字段；
         // 过滤后无有效字段（如 __NSMallocBlock__ 仅剩 isa）则回退全字扫描
         let fieldOffsets = nameMap.keys.filter { $0 > 0 && $0 % 8 == 0 && $0 + 8 <= usableSize }.sorted()
         if fieldOffsets.isEmpty {
             for offset in stride(from: 8, to: usableSize - 7, by: 8) {
-                result.append((offset, ownership(offset)))
+                slots.append((offset, offset))
             }
-            return result
+            // 变长集合缓冲区的大小高度分散，缓存整段逐字槽位会吃掉大量内存。
+            return slots.map { ($0.offset, ownershipByOffset[$0.offset] ?? fallbackOwnership) }
         }
         let functionContexts = swiftFunctionContextOffsets[classPointer] ?? []
         for offset in fieldOffsets {
-            let fieldOwnership = ownership(offset)
-            result.append((offset, fieldOwnership))
+            slots.append((offset, offset))
             let contextOffset = offset + MemoryLayout<UInt>.size
             if functionContexts.contains(contextOffset),
                !nameMap.keys.contains(contextOffset),
                contextOffset + MemoryLayout<UInt>.size <= usableSize {
-                result.append((contextOffset, fieldOwnership))
+                slots.append((contextOffset, offset))
             }
         }
-        return result
+        for contextOffset in functionContexts where contextOffset > 0 && contextOffset % 8 == 0
+            && contextOffset + 8 <= usableSize && !slots.contains(where: { $0.offset == contextOffset }) {
+            let fieldOffset = fieldOffsets.last(where: { $0 < contextOffset })
+            if let fieldOffset { slots.append((contextOffset, fieldOffset)) }
+        }
+        scanLayouts[classPointer, default: [:]][usableSize] = slots
+        return slots.map { slot in
+            (slot.offset, ownershipByOffset[slot.offset] ?? ownershipByOffset[slot.ownerOffset] ?? .strong)
+        }
     }
 
     /// 透传扫描容器块：跳过 8 字节元数据头，逐字找已识别对象；
@@ -1163,14 +2232,19 @@ final class MemoryGraphScanner {
     private func scanContainer(from source: UInt, ivarName: String?, ownership: ReferenceOwnership,
                                containerBase: UnsafeRawPointer, containerSize: Int,
                                seen: inout Set<String>, into: inout [ReferenceEdge], depth: Int = 3) {
-        // Swift 闭包上下文（首字指向 HeapLocalVariableMetadata）里的捕获槽没有
-        // ownership 元数据：strong 与 weak 捕获槽位完全相同，只能标 unknown。
-        // 数组 / 字典等普通缓冲区的元素仍是 strong。
+        // 普通缓冲区（数组 / 字典 backing 等）元素按强持有处理；Swift 闭包上下文
+        // （HeapLocalVariable）的可定位捕获槽由 __swift5_capture 的 CaptureDescriptor 判定：
+        // 强捕获标 strong（参与循环检测），weak/unowned 标对应语义，解析不到的槽回落 unknown。
         let context = containerContext(containerBase)
-        let effective: ReferenceOwnership = context == .buffer ? ownership : .unknown
+        let captureOwnership = context == .closure
+            ? swiftCaptureOwnership(for: UInt(bitPattern: containerBase)) : [:]
         var offset = 8
         while offset + 8 <= containerSize {
-            let word = containerBase.load(fromByteOffset: offset, as: UInt.self)
+            let effective = captureOwnership[offset] ?? (context == .buffer ? ownership : .unknown)
+            let word = referencedAddress(base: containerBase,
+                                         offset: offset,
+                                         ownership: effective,
+                                         allowRawWeakStorage: false)
             if word != 0, word & 1 == 0 {
                 if let targetIndex = objectIndexByAddress[word] {
                     appendEdge(ReferenceEdge(from: source,
@@ -1181,8 +2255,12 @@ final class MemoryGraphScanner {
                                seen: &seen, into: &into)
                 } else if depth > 1, let nestedSize = containerSizeByAddress[word],
                           let nestedBase = UnsafeRawPointer(bitPattern: word) {
+                    let nestedLabel = nestedClosureLabel(parentBase: containerBase,
+                                                         offset: offset,
+                                                         nestedAddress: word,
+                                                         fallback: ivarName)
                     scanContainer(from: source,
-                                  ivarName: ivarName,
+                                  ivarName: nestedLabel,
                                   ownership: effective,
                                   containerBase: nestedBase,
                                   containerSize: min(nestedSize, Int(malloc_size(nestedBase))),
@@ -1275,7 +2353,7 @@ final class MemoryGraphScanner {
 
     /// 所有带 weakly_referenced 标记的节点。该位是对象级 sticky 标记，只表示
     /// 「被某处 weak 引用过」，不指向具体入边，也不能判断捕获边的强弱。
-    /// 类属性的 weak / unowned 已通过反射元数据 / ivarLayout 自动排除，
+    /// 类属性的 weak / unowned 已通过 fieldmd / ivarLayout 自动排除，
     /// 个别反射不可达的字段仍需 --weak-ivar 兜底。
     func weaklyReferencedObjects() -> [HeapObject] {
         objects.filter { $0.weaklyReferenced }
@@ -1298,7 +2376,7 @@ final class MemoryGraphScanner {
             var to: String
             var ivar: String?
             var indirect: Bool
-            /// strong / weak / unowned / nonStrong / unknown
+            /// strong / weak / unowned / unownedUnsafe / nonStrong / unknown
             var ownership: String
         }
         struct GraphJSON: Codable {

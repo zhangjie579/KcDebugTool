@@ -218,7 +218,8 @@ if shouldRunDemo {
 
 /// 按需引用查询验证：对 coordinator 反查 incoming。
 /// 预期 L1 = MGDemoSession（直接）+ 3 个 MGDemoObserver（经 observers 数组间接），
-/// weak 的 subject 与 unowned 的 reporter 不出现在来源中；L2 追加 config 与 token
+/// weak 的 subject 与 unowned 的 reporter 作为非强来源展示但不向上展开；
+/// 参与找环的强引用（confirmed / 未确证 strong）L2 追加 config 与 token。
 private func runReferenceQueryDemo(of root: AnyObject, weakIvarNames: Set<String>) {
     let scanner = MemoryGraphScanner(classPrefixes: ["MGDemo"], weakIvarNames: weakIvarNames)
     print("按需查询：识别堆对象...")
@@ -249,10 +250,16 @@ private func runReferenceQueryDemo(of root: AnyObject, weakIvarNames: Set<String
             print("  \(field) [\(ownership.label)]")
         }
     }
-    print("incoming（谁强引用了它）:")
+    print("incoming（谁引用了它；只有参与找环的强引用向上展开）:")
     for edge in report.incoming {
         let level = report.incomingLevel[edge.from] ?? 0
         print("  L\(level) <- \(name(edge.from))\(edge.isIndirect ? " [经容器]" : "")（\(edge.ivarName ?? "?")）[\(edge.ownership.label)]")
+    }
+    if !report.notificationRetentions.isEmpty {
+        print("NotificationCenter 长期持有（非循环，需 removeObserver）:")
+        for edge in report.notificationRetentions {
+            print("  <- \(name(edge.from))（\(edge.ivarName ?? "?")）[\(edge.ownership.label)]")
+        }
     }
     print("循环引用链（经过该对象）:")
     if report.cycles.isEmpty {

@@ -68,6 +68,7 @@
   .own-strong { background: #e6fcf5; color: #0b7285; }
   .own-weak { background: #fff4e0; color: #b26a00; }
   .own-unowned { background: #f3e9ff; color: #7048e8; }
+  .own-unownedUnsafe { background: #ede9fe; color: #5f3dc4; }
   .own-nonStrong { background: #fff0f6; color: #c2255c; }
   .own-unknown { background: #eee; color: #666; }
   .ref-item.cycle-edge .cls { color: var(--cycle); }
@@ -299,8 +300,8 @@ function refItem(edge, direction) {
   const cycleEdge = cycleSet.has(edge.from) && cycleSet.has(edge.to);
   const ivar = edge.ivar ? `<span class="ivar">${escapeHtml(edge.ivar)}${edge.indirect ? '（容器）' : ''}</span>` : '';
   const ownership = edge.ownership || 'strong';
-  const ownershipLabel = {strong:'strong', weak:'weak', unowned:'unowned',
-                          nonStrong:'非强(weak/unsafe)', unknown:'未知(捕获无元数据)'}[ownership] || ownership;
+  const ownershipLabel = {strong:'strong', weak:'weak', unowned:'unowned', unownedUnsafe:'unowned(unsafe)',
+                          nonStrong:'非强(weak/unsafe)', unknown:'未知(无可用所有权元数据)'}[ownership] || ownership;
   return `<div class="ref-item ${cycleEdge ? 'cycle-edge' : ''}" data-key="${otherAddress}">
     <span class="cls">${escapeHtml(other.className)}</span>
     ${ivar}<span class="own-tag own-${ownership}">${ownershipLabel}</span><span class="meta">${otherAddress}</span></div>`;
