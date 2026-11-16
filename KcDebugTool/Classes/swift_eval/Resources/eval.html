@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swift Eval</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+         background: #f2f3f5; color: #212529; margin: 0; padding: 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px;
+          box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #868e96; font-size: 12px; margin: 0; line-height: 1.6; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 96px; resize: vertical;
+             border: 1px solid #dee2e6; border-radius: 8px; padding: 10px;
+             font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background: #fbfcfd; color: inherit; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  button { border: 0; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+  .depth-label { display: inline-flex; align-items: center; gap: 6px; color: #868e96; font-size: 12px; }
+  .depth-label input { width: 52px; box-sizing: border-box; border: 1px solid #dee2e6;
+                       border-radius: 6px; padding: 6px; background: #fbfcfd; color: inherit; }
+  .primary { background: #1c7ed6; color: #fff; }
+  .primary:disabled { background: #adb5bd; }
+  .ghost { background: #f1f3f5; color: #495057; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { background: #e7f5ff; color: #1971c2; border: 1px solid #a5d8ff; border-radius: 14px;
+          padding: 4px 10px; font-size: 12px; font-family: ui-monospace, Menlo, monospace; cursor: pointer; }
+  .meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #868e96; margin-bottom: 8px; }
+  .meta b { color: #495057; font-weight: 600; }
+  .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                   margin-bottom: 10px; }
+  .section-title h2 { margin: 0; }
+  .copy-button { padding: 5px 10px; font-size: 12px; }
+  .copy-button:disabled { color: #adb5bd; cursor: default; }
+  .badge { border-radius: 4px; padding: 2px 6px; font-size: 11px; }
+  .ok { background: #e6fcf5; color: #0b7285; }
+  .fail { background: #ffe3e3; color: #c92a2a; }
+  pre { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px;
+        overflow: auto; max-height: 420px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap; word-break: break-all; margin: 0; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: #495057; }
+  details { margin-top: 10px; } summary { font-size: 12px; color: #868e96; cursor: pointer; }
+  .hint { color: #adb5bd; font-size: 12px; }
+  .text-input { width: 100%; box-sizing: border-box; border: 1px solid #dee2e6; border-radius: 8px;
+                padding: 9px 10px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+                background: #fbfcfd; color: inherit; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 12px; color: #868e96; }
+  .toggles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .toggles .filter-box { display: inline-flex; align-items: center; gap: 6px; }
+  .toggles .filter-box input { width: 120px; box-sizing: border-box; border: 1px solid #dee2e6;
+                               border-radius: 6px; padding: 6px; background: #fbfcfd; color: inherit; }
+  #describeDisplay { white-space: pre; word-break: normal; max-height: 520px; }
+  .describe-line { display: block; }
+  .cls-line { color: #1971c2; font-weight: 600; }
+  .grp-line { color: #868e96; }
+  .member-line { cursor: pointer; border-radius: 3px; }
+  .member-line:hover { background: rgba(28, 126, 214, .14); }
+  .blank-line { height: .8em; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181d; color: #e9ecef; }
+    .card { background: #202329; box-shadow: none; }
+    textarea, pre, .depth-label input, .text-input, .toggles .filter-box input {
+      background: #17191e; border-color: #343a40; color: #e9ecef; }
+    .meta b, h2 { color: #ced4da; }
+    .badge.ok { background: #0b3b3f; color: #96f2d7; }
+    .badge.fail { background: #4a1d1d; color: #ffc9c9; }
+    .chip { background: #17324b; color: #a5d8ff; border-color: #1c4e77; }
+    .ghost { background: #2b3038; color: #ced4da; }
+    .cls-line { color: #a5d8ff; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Swift Eval</h1>
+    <p class="sub">受限表达式求值：Type.method(args) · 类/实例方法 · static/class/对象属性 · 链式调用。<br>
+      Swift 成员从 Mach-O 动态发现；ObjC 成员按 runtime type encoding 调用，无需注册。</p>
+    <textarea id="expr" spellcheck="false" placeholder="MemoryGraphScanner.identifyObjects()"></textarea>
+    <div class="row">
+      <button class="primary" id="run">运行 (⌘/Ctrl + Enter)</button>
+      <button class="ghost" id="clear">清空</button>
+      <label class="depth-label">展开层数
+        <input id="maxDepth" type="number" min="1" max="10" step="1" value="10">
+      </label>
+      <span class="hint" id="status"></span>
+    </div>
+    <div class="chips" id="examples"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">
+      <h2>结果</h2>
+      <button class="ghost copy-button" id="copyResult" disabled>复制结果</button>
+    </div>
+    <div class="meta" id="meta"><span class="hint">尚未执行</span></div>
+    <pre id="display">—</pre>
+    <details><summary>原始 JSON</summary><pre id="json">—</pre></details>
+  </div>
+
+  <div class="card">
+    <div class="section-title">
+      <h2>成员清单（属性 / 方法）</h2>
+      <button class="ghost copy-button" id="copyDescription" disabled>复制清单</button>
+    </div>
+    <p class="sub">输入 <b>0x 对象地址</b> 或 <b>类名</b>，沿继承链逐类列出 Properties / Instance Methods / Class Methods，
+      ObjC 与 Swift 成员合并展示（Swift 标 [swift]，存储属性标 (ivar)）。点击成员行可填入上方表达式。</p>
+    <input class="text-input" id="describeTarget" spellcheck="false" autocomplete="off"
+           placeholder="0x12f945200 或 swiftTest.ViewController">
+    <div class="row">
+      <button class="primary" id="describeRun">列出成员</button>
+      <span class="toggles">
+        <label><input type="checkbox" id="describeSwift" checked>Swift 符号</label>
+        <label><input type="checkbox" id="describeSuper" checked>父类</label>
+        <label><input type="checkbox" id="describeIvars" checked>ivar / 存储属性</label>
+        <span class="filter-box">筛选 <input id="describeFilter" spellcheck="false" placeholder="方法名 / 类名"></span>
+      </span>
+      <span class="hint" id="describeStatus"></span>
+    </div>
+    <div class="chips" id="describeExamples"></div>
+    <div class="meta" id="describeMeta"><span class="hint">尚未查询</span></div>
+    <pre id="describeDisplay">—</pre>
+    <p class="sub" id="describeNotes"></p>
+  </div>
+
+  <div class="card">
+    <h2>历史</h2>
+    <div class="chips" id="history"></div>
+  </div>
+
+  <div class="card">
+    <h2>已发现类型</h2>
+    <pre id="catalog">加载中…</pre>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const HISTORY_KEY = 'swift_eval_history';
+const DEPTH_KEY = 'swift_eval_max_depth';
+let descriptionData = null;
+
+function normalizedDepth() {
+  const depth = Math.trunc(Number($('maxDepth').value) || 10);
+  const normalized = Math.min(10, Math.max(1, depth));
+  $('maxDepth').value = normalized;
+  try { localStorage.setItem(DEPTH_KEY, String(normalized)); } catch (e) {}
+  return normalized;
+}
+
+function readHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch (e) { return []; }
+}
+function pushHistory(expr) {
+  const items = [expr, ...readHistory().filter((item) => item !== expr)].slice(0, 20);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(items)); } catch (e) {}
+  renderHistory();
+}
+function chip(container, text, onClick) {
+  const node = document.createElement('span');
+  node.className = 'chip';
+  node.textContent = text;
+  node.onclick = onClick;
+  container.appendChild(node);
+}
+function renderHistory() {
+  const box = $('history');
+  box.innerHTML = '';
+  const items = readHistory();
+  if (!items.length) { box.innerHTML = '<span class="hint">暂无记录</span>'; return; }
+  items.forEach((item) => chip(box, item.length > 48 ? item.slice(0, 47) + '…' : item, () => {
+    $('expr').value = item;
+    $('expr').focus();
+  }));
+}
+
+function fallbackCopy(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('浏览器不支持复制');
+}
+
+async function copyText(text, button, defaultLabel) {
+  if (!text || text === '—') return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      fallbackCopy(text);
+    }
+    button.textContent = '已复制';
+  } catch (error) {
+    button.textContent = '复制失败';
+  }
+  window.setTimeout(() => { button.textContent = defaultLabel; }, 1200);
+}
+
+async function copyResult() {
+  await copyText($('display').textContent, $('copyResult'), '复制结果');
+}
+
+async function copyDescription() {
+  await copyText(descriptionData ? descriptionData.display : '', $('copyDescription'), '复制清单');
+}
+
+async function run() {
+  const expr = $('expr').value.trim();
+  if (!expr) return;
+  const button = $('run');
+  button.disabled = true;
+  $('status').textContent = '执行中…';
+  try {
+    const response = await fetch('/api/eval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expr, maxDepth: normalizedDepth() })
+    });
+    const result = await response.json();
+    $('meta').innerHTML = '';
+    const add = (label, value) => {
+      const span = document.createElement('span');
+      span.innerHTML = label + ' <b></b>';
+      span.querySelector('b').textContent = value;
+      $('meta').appendChild(span);
+    };
+    add('状态', result.ok ? '成功' : '失败');
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (result.ok ? 'ok' : 'fail');
+    badge.textContent = result.errorKind || 'ok';
+    $('meta').appendChild(badge);
+    add('返回值', result.hasReturnValue ? '有 · ' + result.type : '无返回值');
+    add('耗时', result.durationMs + ' ms');
+    $('display').textContent = result.ok ? result.display : result.display + (result.suggestion ? '\n' + result.suggestion : '');
+    $('json').textContent = JSON.stringify(result, null, 2);
+    $('copyResult').disabled = false;
+    $('status').textContent = result.ok ? '完成' : '出错';
+    pushHistory(expr);
+  } catch (error) {
+    $('status').textContent = '请求失败';
+    $('display').textContent = String(error);
+    $('copyResult').disabled = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function appendDescribeLine(container, text, kind) {
+  const node = document.createElement('div');
+  node.className = 'describe-line ' + kind + '-line';
+  node.textContent = text;
+  container.appendChild(node);
+  return node;
+}
+
+function expressionForMember(member) {
+  if (!descriptionData) return '';
+  const receiver = descriptionData.isAddress
+    ? descriptionData.target : (descriptionData.className || descriptionData.target);
+  if (!receiver || !member.name) return '';
+  const isProperty = member.signature.trim().indexOf('@property') === 0;
+  return isProperty ? receiver + '.' + member.name : receiver + '.' + member.name + '()';
+}
+
+function renderDescription() {
+  const box = $('describeDisplay');
+  box.innerHTML = '';
+  if (!descriptionData) { box.textContent = '—'; return; }
+  if (!descriptionData.ok) { box.textContent = descriptionData.display; return; }
+  const filter = ($('describeFilter').value || '').trim().toLowerCase();
+  let shownSections = 0;
+  (descriptionData.sections || []).forEach((section) => {
+    const classMatch = (section.className || '').toLowerCase().includes(filter);
+    const groups = (section.groups || []).map((group) => ({
+      title: group.title,
+      members: (group.members || []).filter((member) => !filter || classMatch ||
+        (member.name || '').toLowerCase().includes(filter) ||
+        (member.signature || '').toLowerCase().includes(filter))
+    })).filter((group) => group.members.length);
+    if (!groups.length) return;
+    if (shownSections > 0) appendDescribeLine(box, '', 'blank');
+    appendDescribeLine(box, 'in ' + section.className + ':', 'cls');
+    groups.forEach((group) => {
+      appendDescribeLine(box, group.title + ':', 'grp');
+      group.members.forEach((member) => {
+        const node = appendDescribeLine(box, '\t' + member.signature, 'member');
+        const expression = expressionForMember(member);
+        node.title = expression ? '点击填入：' + expression : member.signature;
+        node.onclick = () => {
+          if (!expression) return;
+          $('expr').value = expression;
+          $('expr').focus();
+          $('describeStatus').textContent = member.argumentCount
+            ? '已填入调用模板，需按签名补参数' : '已填入表达式';
+        };
+      });
+    });
+    shownSections += 1;
+  });
+  if (!shownSections) box.textContent = filter ? '没有匹配的成员' : '(没有可见成员)';
+  $('describeNotes').textContent = (descriptionData.notes || []).join(' ');
+}
+
+async function describe() {
+  const target = $('describeTarget').value.trim();
+  if (!target) return;
+  const button = $('describeRun');
+  button.disabled = true;
+  $('describeStatus').textContent = '查询中…';
+  const params = new URLSearchParams({
+    target: target,
+    includeSwift: $('describeSwift').checked ? '1' : '0',
+    includeSuper: $('describeSuper').checked ? '1' : '0',
+    includeIvars: $('describeIvars').checked ? '1' : '0'
+  });
+  try {
+    const response = await fetch('/api/describe?' + params.toString());
+    descriptionData = await response.json();
+    $('describeMeta').textContent = descriptionData.ok
+      ? (descriptionData.className + ' · ' + descriptionData.classCount + ' 层继承链 · ' +
+         descriptionData.memberCount + ' 项成员')
+      : (descriptionData.error || '查询失败');
+    renderDescription();
+    $('copyDescription').disabled = false;
+    $('describeStatus').textContent = descriptionData.ok ? '完成' : '出错';
+  } catch (error) {
+    descriptionData = null;
+    $('describeMeta').textContent = '请求失败';
+    $('describeDisplay').textContent = String(error);
+    $('describeNotes').textContent = '';
+    $('describeStatus').textContent = '请求失败';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$('run').onclick = run;
+$('clear').onclick = () => { $('expr').value = ''; $('expr').focus(); };
+$('copyResult').onclick = copyResult;
+$('describeRun').onclick = describe;
+$('copyDescription').onclick = copyDescription;
+$('describeFilter').oninput = renderDescription;
+['describeSwift', 'describeSuper', 'describeIvars'].forEach((id) => {
+  $(id).onchange = () => { if ($('describeTarget').value.trim()) describe(); };
+});
+$('describeTarget').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') { event.preventDefault(); describe(); }
+});
+['NSObject', 'UIView', 'UIViewController'].forEach((name) => {
+  chip($('describeExamples'), name, () => {
+    $('describeTarget').value = name;
+    describe();
+  });
+});
+try { $('maxDepth').value = localStorage.getItem(DEPTH_KEY) || '10'; } catch (e) {}
+$('maxDepth').onchange = normalizedDepth;
+normalizedDepth();
+$('expr').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); run(); }
+});
+
+fetch('/api/catalog').then((r) => r.json()).then((catalog) => {
+  const types = catalog.types || {};
+  const names = Object.keys(types);
+  const roots = catalog.roots || [];
+  // methods 是手动注册的全局方法：name(args) 直接调用，不属于任何类型。
+  const methods = catalog.methods || [];
+  const lines = names.length
+    ? names.map((name) => name + ': ' + (types[name] || []).join(', '))
+    : ['尚未发现类型；执行一条 Type.method() 表达式后会显示成员。'];
+  lines.push('', 'roots: ' + roots.join(', '), 'methods: ' + methods.join(', '));
+  $('catalog').textContent = lines.join('\n');
+  const box = $('examples');
+  methods.slice(0, 16).forEach((name) => {
+    chip(box, name + '()', () => {
+      $('expr').value = name + '()';
+      $('expr').focus();
+    });
+  });
+  names.slice(0, 12).forEach((name) => {
+    (types[name] || []).slice(0, 4).forEach((member) => {
+      chip(box, name + '.' + member + '()', () => {
+        $('expr').value = name + '.' + member + '()';
+        $('expr').focus();
+      });
+    });
+  });
+  ['Type.members', 'Type.typeName'].forEach((text) => chip(box, text, () => {
+    $('expr').value = text.replace('Type', names[0] || 'Type');
+    $('expr').focus();
+  }));
+}).catch(() => { $('catalog').textContent = '无法获取 /api/catalog'; });
+
+renderHistory();
+</script>
+</body>
+</html>
