@@ -29,6 +29,22 @@ demangle 后按类型、方法名、参数标签及数量选出唯一符号，�
 `Type.instanceMethod()` 会通过可用的初始化方法创建对象；初始化参数都有默认值时，会动态调用对应的
 default-argument generator。`Type().instanceMethod()` 也受支持。
 
+### Swift 方法列表的来源与限制
+
+纯 Swift 方法没有类似 ObjC selector 的通用运行时枚举接口。本工具列出并调用 Swift 方法时，走的是
+**Mach-O 符号表 + demangle**：
+
+1. 遍历当前进程已加载镜像的 `LC_SYMTAB`，只保留可执行 section 中以 `$s` / `$S` 开头的 Swift 符号；
+2. 调用 Swift runtime 的 `swift_demangle` 还原声明文本；
+3. 从声明文本解析所属类型、成员名、参数标签/类型、返回类型和 ASLR 后函数地址；
+4. 排除 `thunk`、protocol witness、specialization、default-argument generator 等不能直接作为普通成员调用的编译器产物；
+5. 成员清单与 `Type.method(...)` 共用解析结果。调用时由 arm64 ABI 调用桥按签名放置寄存器参数，再跳转到该地址。
+
+Swift metadata 解决的是另一类问题：`__swift5_types` 可恢复 nominal type、父上下文和 metadata accessor，
+`__swift5_fieldmd` 可恢复存储字段信息；class vtable / method descriptor 也可能持有方法实现地址。
+但 Swift ABI 的 `MethodDescriptor` 不保存方法名、参数标签和完整签名，因此 Release Strip 后即使仍能取得地址，
+也无法可靠还原成可输入的 `foo(bar:)`。这时应使用 `SwiftEval.register(method:)` 显式注册入口，或将成员暴露给 ObjC runtime。
+
 需要执行一段**任意调试逻辑**（符号被裁剪、类型不可见、要组合多个调用或直接改状态）时，
 可改用[手动注册方法](#手动注册方法)：注册一个闭包，之后用 `name(args)` 调用，参数语法与自动发现
 完全一致。两种路径可混用，注册方法优先于同名类型构造。
@@ -42,7 +58,7 @@ default-argument generator。`Type().instanceMethod()` 也受支持。
 | `Classes/SwiftEval.swift` | 对外 API、`EvalResult`、表达式求值器 |
 | `Classes/EvalExpression.swift` | 词法 / 语法解析 |
 | `Classes/SwiftMachOInvoker.swift` | Swift 符号签名解析、参数准备、返回值装箱 |
-| `Classes/SEMachOSymbolResolver.m` | Mach-O 符号读取、ObjC NSInvocation 分派 |
+| `Classes/SEMachOSymbolResolver.m` | Swift Mach-O metadata / 符号读取、ObjC NSInvocation 分派 |
 | `Classes/SESwiftCallArm64.S` | Swift ABI 寄存器调用桥（含 x20 self / metatype） |
 | `Classes/EvalRuntime.swift` | 实参取用、根变量 / 手动注册方法注册表、ObjC runtime 查找 |
 | `Classes/EvalValue.swift` | 返回值装箱、可读文本与 JSON 序列化 |
@@ -111,6 +127,7 @@ let detailed = SwiftEval.evaluate("currentView", maxDepth: 8)
 | `Type.staticProperty` / `Type.classProperty` | Swift static / class 属性或 ObjC 类属性 |
 | `object.property` / `Type().property` | 已有对象或临时实例的对象属性 |
 | `0x12f945200.test()` / `0x12f945200.property` | 以当前进程内仍存活的对象地址调用实例方法或读取属性 |
+| `0x12f945200.$layoutMode` | 读取 property wrapper 暴露的 projected-value 成员；`$` 仅允许在点号后 |
 | `.description` `.count` `.isEmpty` `.typeName` `.json` `.fields` | 任意返回值都可用的通用属性 |
 | `Type.members` / `Type.typeName` | Mach-O 可发现成员清单 / 类型名 |
 | `"text"` `123` `0x2a` `1.5` `true` `false` `nil` `[1,2]` `["k":1]` | 字面量 |
@@ -407,9 +424,13 @@ in UIViewController:
 
 - **ObjC 成员**来自 runtime：当前类 / 元类的 `class_copyPropertyList`、`class_copyMethodList` 与 `class_copyIvarList`。
   方法行与 Swift 成员统一成声明式 `name(_: Type, label: Type) -> ReturnType (0x...) [objc]`：第一个参数对应 Swift 的「_」无标签，其余用 selector 片段作标签；行尾 `[objc]` 区分来源。参数 / 返回值由 type encoding 转成 `id`、`long`、`BOOL`、`struct CGRect` 等可读名，`__C.` 模块前缀已去掉（如 `__C.UITableView` → `UITableView`），指针星号在声明式里省略。
-- **Swift 成员**来自 Mach-O 符号（与 `Type.method()` 共用同一套解析规则），行尾标 `[swift]`，地址是符号加载地址。
+- **Swift 类型 metadata**直接来自 Mach-O `__swift5_types` nominal type descriptor，并通过 descriptor
+  自带的 metadata accessor 获取，不依赖 `LC_SYMTAB`，所以 Release strip 后仍可识别非泛型自定义类型。
+- **Swift 成员**仍来自 Mach-O 符号（与 `Type.method()` 共用同一套解析规则），行尾标 `[swift]`，地址是符号加载地址。
   与同名、同参数个数的 ObjC selector 重复的会去掉；`@objc` thunk、`__allocating_init` 等编译器产物不列。
-  与动态调用一样，Strip / LTO / Release 包会减少可见符号。
+  Swift ABI 的 method descriptor 只有方法种类和实现相对指针，不保存成员名、参数标签或完整签名；因此
+  Strip / LTO / Release 包仍会减少可自动发现的纯 Swift 成员。需要在裁剪后稳定调用的入口应使用
+  `SwiftEval.register(method:)` 显式注册，或暴露给 ObjC runtime。
 - 纯 Swift 类没有 `@property` 元数据，存储属性以 `(ivar, 所有权)` 行列出；runtime 不给这类 ivar 有效 type encoding 时，
   用同名 Swift getter 或 ObjC `@property` 的声明类型补出（都没有才退化为 `id`）。
   所有权有 `strong` / `weak` / `unowned` / `unowned(unsafe)` 四种，来自 Mach-O `__swift5_fieldmd` 字段描述符：

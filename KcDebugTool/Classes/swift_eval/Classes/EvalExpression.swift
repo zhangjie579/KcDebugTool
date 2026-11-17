@@ -79,7 +79,7 @@ private struct EvalLexer {
                 skipLineComment()
                 continue
             }
-            if isIdentifierHead(character) {
+            if isIdentifierHead(character) || canStartProjectedMember(character, after: tokens.last) {
                 tokens.append(Token(kind: .identifier(readIdentifier()), offset: start))
                 continue
             }
@@ -141,9 +141,23 @@ private struct EvalLexer {
         isIdentifierHead(character) || isDigit(character)
     }
 
+    /// Swift property wrapper 的 projected value 以 `$name` 暴露。`$` 只允许出现在点号后的
+    /// 成员首位，避免同时放宽顶层类型、根变量和参数标签的语法。
+    private func canStartProjectedMember(_ character: Character, after token: Token?) -> Bool {
+        guard character == "$", let next = peek(), isIdentifierHead(next), let token = token else {
+            return false
+        }
+        if case .punctuation(".") = token.kind { return true }
+        return false
+    }
+
     /// 贪婪读取一个完整标识符，并把游标停在第一个非标识符字符上。
     private mutating func readIdentifier() -> String {
         var text = ""
+        if current == "$" {
+            text.append("$")
+            advance()
+        }
         while let character = current, isIdentifierBody(character) {
             text.append(character)
             advance()

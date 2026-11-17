@@ -2,9 +2,15 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// 读取当前进程已加载 Mach-O 的 Swift 符号，并通过 arm64 Swift ABI 调用符号地址。
+/// 读取当前进程已加载 Mach-O 的 Swift metadata / 符号，并通过 arm64 Swift ABI 调用代码地址。
 /// 该接口只给 SwiftEval 内部使用；所有地址在调用前都来自当前进程的已加载镜像。
 @interface SEMachOSymbolResolver : NSObject
+
+/// 直接扫描 Mach-O `__swift5_types` nominal type descriptor，按完整名或唯一短名返回
+/// 类型元数据访问器。每项包含 name、qualifiedName、accessor、descriptor、isGeneric、image。
+/// 不读取 LC_SYMTAB，Release strip 后仍可用；同名短类型跨模块不唯一时返回 nil。
++ (NSDictionary<NSString *, id> * _Nullable)swiftTypeMetadataRecordNamed:(NSString *)typeName
+    NS_SWIFT_NAME(swiftTypeMetadataRecord(named:));
 
 /// 返回原始符号名中包含 typeName 的 Swift 符号。每项包含 address、mangled、demangled、image。
 + (NSArray<NSDictionary<NSString *, id> *> *)symbolsContainingType:(NSString *)typeName;

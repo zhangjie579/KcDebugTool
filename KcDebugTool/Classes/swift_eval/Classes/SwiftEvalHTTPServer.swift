@@ -410,11 +410,9 @@ public final class SwiftEvalHTTPServer {
     """
 }
 
-#if DEBUG
 extension NSObject {
     /// App 调试入口：仅 DEBUG 构建生效。以 ObjC 可见类方法暴露，方便调试菜单或 LLDB 调用。
     @objc public class func startEvalIfDebug() {
         SwiftEvalHTTPServer.shared.start(port: 16817)
     }
 }
-#endif

@@ -24,6 +24,12 @@ typedef struct {
     uint64_t size;
 } SEFieldSection;
 
+/// `__swift5_types` section 的运行时地址与长度。
+typedef struct {
+    uintptr_t address;
+    uint64_t size;
+} SETypeSection;
+
 /// 相对指针目标必须落在当前镜像已映射的 section 内，返回该处到 section 末尾的可读上限。
 /// 字段描述符里的相对指针可能被 strip 或指向异常地址，不能无条件解引用。
 static size_t SESectionByteLimit(uintptr_t target, const SESectionRange *ranges, size_t count) {
@@ -44,6 +50,41 @@ static NSString * _Nullable SEBoundedCString(const uint8_t *bytes, size_t limit)
                                             encoding:NSUTF8StringEncoding];
     return text ?: [[NSString alloc] initWithBytes:bytes length:length
                                           encoding:NSISOLatin1StringEncoding];
+}
+
+/// ContextDescriptor 的 parent/name 都是以字段自身地址为基准的 32 位相对指针。
+/// 这里只接受 module/protocol/nominal type 这几种具有 name 字段的上下文，逐级拼成 Module.Type。
+static NSString * _Nullable SEQualifiedContextName(const uint8_t *descriptor,
+                                                    const SESectionRange *ranges,
+                                                    size_t rangeCount) {
+    NSMutableArray<NSString *> *components = NSMutableArray.array;
+    const uint8_t *current = descriptor;
+    for (NSUInteger depth = 0; depth < 32 && current != NULL; depth++) {
+        size_t limit = SESectionByteLimit((uintptr_t)current, ranges, rangeCount);
+        if (limit < 12) { return nil; }
+        uint32_t flags = 0;
+        memcpy(&flags, current, sizeof(flags));
+        uint8_t kind = (uint8_t)(flags & 0x1f);
+        BOOL hasName = kind == 0 || kind == 3 || (kind >= 16 && kind <= 31);
+        if (!hasName) { return nil; }
+        int32_t nameDelta = 0;
+        memcpy(&nameDelta, current + 8, sizeof(nameDelta));
+        uintptr_t nameTarget = (uintptr_t)(current + 8) + (intptr_t)nameDelta;
+        size_t nameLimit = SESectionByteLimit(nameTarget, ranges, rangeCount);
+        NSString *name = nameLimit == 0 ? nil :
+            SEBoundedCString((const uint8_t *)nameTarget, nameLimit);
+        if (name.length == 0) { return nil; }
+        [components addObject:name];
+
+        int32_t parentDelta = 0;
+        memcpy(&parentDelta, current + 4, sizeof(parentDelta));
+        if (parentDelta == 0) { break; }
+        uintptr_t parentTarget = (uintptr_t)(current + 4) + (intptr_t)parentDelta;
+        if (SESectionByteLimit(parentTarget, ranges, rangeCount) == 0) { return nil; }
+        current = (const uint8_t *)parentTarget;
+    }
+    if (components.count == 0) { return nil; }
+    return [[[components reverseObjectEnumerator] allObjects] componentsJoinedByString:@"."];
 }
 
 /// 字段类型 mangling 的尾缀决定所有权：Xw=weak、Xo=unowned、Xu=unowned(unsafe)/unmanaged。
@@ -212,6 +253,114 @@ extern void SEInvokeSwiftArm64(void *function,
 #endif
 
 @implementation SEMachOSymbolResolver
+
+/// 从 `__swift5_types` 的相对指针表还原 nominal type descriptor。
+/// descriptor 自带类型名、父上下文和 metadata accessor，因此这条链路不依赖 LC_SYMTAB。
++ (NSDictionary<NSString *,id> * _Nullable)swiftTypeMetadataRecordNamed:(NSString *)typeName {
+    NSString *wanted = [typeName stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    if (wanted.length == 0) { return nil; }
+
+    static NSArray<NSDictionary<NSString *, id> *> *cachedRecords;
+    static uint32_t cachedImageCount;
+    uint32_t imageCount = _dyld_image_count();
+    @synchronized (self) {
+        if (cachedRecords == nil || cachedImageCount != imageCount) {
+            NSMutableArray<NSDictionary<NSString *, id> *> *records = NSMutableArray.array;
+            for (uint32_t imageIndex = 0; imageIndex < imageCount; imageIndex++) {
+                const struct mach_header_64 *header =
+                    (const struct mach_header_64 *)_dyld_get_image_header(imageIndex);
+                if (header == NULL || header->magic != MH_MAGIC_64) { continue; }
+                intptr_t slide = _dyld_get_image_vmaddr_slide(imageIndex);
+                SESectionRange ranges[256];
+                size_t rangeCount = 0;
+                SETypeSection typeSections[8];
+                size_t typeSectionCount = 0;
+                const uint8_t *commandAddress = (const uint8_t *)(header + 1);
+                for (uint32_t commandIndex = 0; commandIndex < header->ncmds; commandIndex++) {
+                    const struct load_command *command = (const struct load_command *)commandAddress;
+                    if (command->cmd == LC_SEGMENT_64) {
+                        const struct segment_command_64 *segment =
+                            (const struct segment_command_64 *)command;
+                        const struct section_64 *sections =
+                            (const struct section_64 *)(segment + 1);
+                        for (uint32_t sectionIndex = 0; sectionIndex < segment->nsects;
+                             sectionIndex++) {
+                            const struct section_64 *section = sections + sectionIndex;
+                            uintptr_t start = (uintptr_t)slide + section->addr;
+                            if (rangeCount < 256 && section->size > 0) {
+                                ranges[rangeCount++] =
+                                    (SESectionRange){ start, start + section->size };
+                            }
+                            if (typeSectionCount < 8 &&
+                                strncmp(section->sectname, "__swift5_types", 16) == 0) {
+                                typeSections[typeSectionCount++] =
+                                    (SETypeSection){ start, section->size };
+                            }
+                        }
+                    }
+                    commandAddress += command->cmdsize;
+                }
+
+                NSString *image =
+                    [NSString stringWithUTF8String:_dyld_get_image_name(imageIndex) ?: ""];
+                for (size_t sectionIndex = 0; sectionIndex < typeSectionCount; sectionIndex++) {
+                    const uint8_t *base = (const uint8_t *)typeSections[sectionIndex].address;
+                    uint64_t size = typeSections[sectionIndex].size;
+                    for (uint64_t offset = 0; offset + 4 <= size; offset += 4) {
+                        int32_t descriptorDelta = 0;
+                        memcpy(&descriptorDelta, base + offset, sizeof(descriptorDelta));
+                        if (descriptorDelta == 0) { continue; }
+                        uintptr_t descriptorAddress =
+                            (uintptr_t)(base + offset) + (intptr_t)descriptorDelta;
+                        size_t descriptorLimit =
+                            SESectionByteLimit(descriptorAddress, ranges, rangeCount);
+                        if (descriptorLimit < 20) { continue; }
+                        const uint8_t *descriptor = (const uint8_t *)descriptorAddress;
+                        uint32_t flags = 0;
+                        memcpy(&flags, descriptor, sizeof(flags));
+                        uint8_t kind = (uint8_t)(flags & 0x1f);
+                        if (kind < 16 || kind > 31) { continue; }
+                        NSString *qualifiedName =
+                            SEQualifiedContextName(descriptor, ranges, rangeCount);
+                        if (qualifiedName.length == 0) { continue; }
+                        NSString *name = qualifiedName.pathExtension;
+
+                        int32_t accessorDelta = 0;
+                        memcpy(&accessorDelta, descriptor + 12, sizeof(accessorDelta));
+                        if (accessorDelta == 0) { continue; }
+                        uintptr_t accessor =
+                            (uintptr_t)(descriptor + 12) + (intptr_t)accessorDelta;
+                        if (SESectionByteLimit(accessor, ranges, rangeCount) == 0) { continue; }
+                        [records addObject:@{
+                            @"name": name ?: @"",
+                            @"qualifiedName": qualifiedName,
+                            @"accessor": @(accessor),
+                            @"descriptor": @(descriptorAddress),
+                            @"isGeneric": @((flags & 0x80) != 0),
+                            @"image": image ?: @""
+                        }];
+                    }
+                }
+            }
+            cachedRecords = records.copy;
+            cachedImageCount = imageCount;
+        }
+
+        BOOL wantsQualifiedName = [wanted containsString:@"."];
+        NSDictionary<NSString *, id> *match = nil;
+        for (NSDictionary<NSString *, id> *record in cachedRecords) {
+            NSString *candidate = wantsQualifiedName ? record[@"qualifiedName"] : record[@"name"];
+            if (![candidate isEqualToString:wanted]) { continue; }
+            // 完整名唯一；短名若跨模块重复则拒绝猜测。
+            if (match != nil && !wantsQualifiedName &&
+                ![match[@"qualifiedName"] isEqualToString:record[@"qualifiedName"]]) {
+                return nil;
+            }
+            match = record;
+        }
+        return match;
+    }
+}
 
 /// 扫描全部已加载 Mach-O 镜像的可执行 section，筛选 Swift mangled 函数并 demangle；按镜像数量缓存，
 /// 新动态库加载后自动重建。只返回符号元数据和 ASLR 后地址，不执行任何 Swift 函数。

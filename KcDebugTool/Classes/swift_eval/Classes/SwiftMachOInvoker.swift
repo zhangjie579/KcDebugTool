@@ -64,8 +64,8 @@ enum SwiftMachOInvoker {
 
     /// 通过可解析成员或 Swift metadata 判断类型是否存在；后者覆盖没有可见方法符号的类型。
     static func hasType(named name: String) -> Bool {
-        // 先看缓存/符号里有没有可调用方法，再退到 Swift 类型元数据（覆盖没有方法符号的纯类型）。
-        !methods(typeName: name).isEmpty || metadataType(named: name) != nil
+        // metadata 优先，命中时不触发符号表扫描；仅旧产物缺少 descriptor 时才用成员符号兜底。
+        metadataType(named: name) != nil || !methods(typeName: name).isEmpty
     }
 
     /// 返回去重排序后的成员短名，用于错误提示和目录，不承诺每个同名重载都可安全调用。
@@ -761,14 +761,31 @@ enum SwiftMachOInvoker {
         return UInt(bitPattern: unsafeBitCast(type, to: UnsafeRawPointer.self))
     }
 
-    /// 将展示类型名先重写为 Swift mangled 名，再通过 runtime `_typeByName` 取得 metadata。
+    /// 优先从 `__swift5_types` descriptor 的 metadata accessor 取得类型；标准库/泛型容器再走 mangled name。
+    /// nominal type descriptor 属于 Swift ABI 元数据，Release strip 不会像 LC_SYMTAB 一样被整体裁掉。
     private static func metadataType(named displayName: String) -> Any.Type? {
-        // 先重写展示名为 mangled 名，再向 Swift runtime 请求类型元数据。
+        let text = displayName.trimmingCharacters(in: .whitespaces)
+        if let record = SEMachOSymbolResolver.swiftTypeMetadataRecord(named: text),
+           record["isGeneric"] as? Bool == false,
+           let accessor = (record["accessor"] as? NSNumber)?.uintValue,
+           accessor != 0,
+           let output = try? SEMachOSymbolResolver.invokeAddress(
+               accessor,
+               context: 0,
+               // 非泛型 accessor 只需要 x0；0xff 与编译器生成的普通 metadata accessor 调用保持一致。
+               generalWords: [NSNumber(value: UInt64(0xff))],
+               floatingWords: []),
+           let address = output["general"]?.first?.uintValue,
+           let pointer = UnsafeRawPointer(bitPattern: address) {
+            return unsafeBitCast(pointer, to: Any.Type.self)
+        }
+        // 基础类型和已支持的 Optional/集合泛型仍由 runtime 根据稳定 mangling 解析。
         guard let mangled = mangledTypeName(from: displayName) else { return nil }
         return Swift._typeByName(mangled)
     }
 
-    /// 覆盖基础类型、Optional/集合泛型和镜像简写；自定义类型从 metadata accessor 符号反推出 mangled 名。
+    /// 覆盖基础类型、Optional/集合泛型和镜像简写。自定义 nominal type 已在 metadataType 中
+    /// 直接通过 `__swift5_types` accessor 解析，不再从 metadata accessor 符号反推 mangling。
     private static func mangledTypeName(from displayName: String) -> String? {
         let text = displayName.trimmingCharacters(in: .whitespaces)
         let basics: [String: String] = [
@@ -817,14 +834,6 @@ enum SwiftMachOInvoker {
                 return "SDy\(key)\(value)G"
             }
             if let element = mangledTypeName(from: inner) { return "Say\(element)G" }
-        }
-        let short = SwiftEvalRegistry.key(text)
-        for symbol in symbols(containing: short) {
-            guard let demangled = symbol["demangled"] as? String,
-                  demangled == "type metadata accessor for \(text)",
-                  let mangled = symbol["mangled"] as? String,
-                  mangled.hasPrefix("$s"), mangled.hasSuffix("Ma") else { continue }
-            return String(mangled.dropFirst(2).dropLast(2))
         }
         return nil
     }

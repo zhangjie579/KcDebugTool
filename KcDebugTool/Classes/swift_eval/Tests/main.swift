@@ -17,6 +17,16 @@ struct HeapObject {
     let className: String
 }
 
+@propertyWrapper
+struct LayoutModeProjection {
+    var wrappedValue: String
+    var projectedValue: String { "projected:\(wrappedValue)" }
+}
+
+final class ProjectedMemberProbe {
+    @LayoutModeProjection var layoutMode = "grid"
+}
+
 class ScannerBase {
     let inheritedName = "scanner-base"
 }
@@ -146,6 +156,7 @@ func evaluate(_ source: String) -> EvalResult {
 // 根变量仅用于验证“已有对象 + 动态方法”链路，方法本身没有注册。
 let scannerObject = MemoryGraphScanner()
 _ = scannerObject.lazyName
+let projectedMemberProbe = ProjectedMemberProbe()
 let objcToolObject = ObjcDebugTool()
 let cyclicNode = ReferenceNode(name: "root")
 cyclicNode.next = cyclicNode
@@ -289,6 +300,10 @@ let compressedTypeSymbols = SEMachOSymbolResolver.symbolsContainingType(
 check(compressedTypeSymbols.contains(where: {
     ($0["demangled"] as? String)?.contains("compressedLookupMarker") == true
 }), "Swift mangling substitution 不会导致类型符号在 demangle 前被过滤")
+let metadataRecord = SEMachOSymbolResolver.swiftTypeMetadataRecord(
+    named: "swift_eval_selftestCompressedType")
+check((metadataRecord?["accessor"] as? NSNumber)?.uintValue != 0,
+      "Swift nominal type metadata 直接来自 __swift5_types，不依赖符号表")
 
 // MARK: - ObjC 声明属性 / getter 副作用边界
 
@@ -412,6 +427,11 @@ check(evaluate("MemoryGraphScanner.version(").error?.kind == .syntax, "语法错
 check(evaluate("").error?.kind == .syntax, "空表达式报错")
 check(evaluate("MemoryGraphScanner.ping()").error != nil, "缺少实参时报错")
 check(evaluate("0x1.objectValue").error?.kind == .argument, "非法对象地址安全报错")
+let projectedMemberAddress = addressExpression(of: projectedMemberProbe)
+check(evaluate(projectedMemberAddress + ".$layoutMode").displayText == "\"projected:grid\"",
+      "对象地址支持读取 $ 开头的 Swift projected-value 成员")
+check(evaluate("$layoutMode").error?.kind == .syntax,
+      "$ 只允许用于点号后的成员名")
 
 let cyclicResult = SwiftEval.evaluate("cyclicNode", maxDepth: 10)
 check(cyclicResult.isSuccess && cyclicResult.displayText.contains("循环引用"),
