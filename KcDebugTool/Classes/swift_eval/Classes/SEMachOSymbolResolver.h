@@ -27,6 +27,11 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSArray<NSString *> *)fieldOwnershipForIvarNames:(NSArray<NSString *> *)names
     NS_SWIFT_NAME(fieldOwnership(forIvarNames:));
 
+/// 按 nominal type descriptor 的 FieldDescriptor 相对指针定位当前类字段，返回原始 mangling
+/// （含 symbolic reference）、类型上下文地址及所有权；不按全局同名字段猜测类型。
++ (NSDictionary<NSString *, NSDictionary<NSString *, id> *> *)fieldTypeRecordsForType:(NSString *)typeName
+    NS_SWIFT_NAME(fieldTypeRecords(forType:));
+
 /// 调用 Swift 函数。generalWords 按 x0...x7 排列，floatingWords 按 d0...d7 排列；
 /// context 写入 Swift self / metatype 使用的 x20。返回 x0...x2 与 d0...d3 的原始位。
 + (NSDictionary<NSString *, NSArray<NSNumber *> *> * _Nullable)

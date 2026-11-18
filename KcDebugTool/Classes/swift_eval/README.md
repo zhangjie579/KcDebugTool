@@ -45,6 +45,21 @@ Swift metadata 解决的是另一类问题：`__swift5_types` 可恢复 nominal 
 但 Swift ABI 的 `MethodDescriptor` 不保存方法名、参数标签和完整签名，因此 Release Strip 后即使仍能取得地址，
 也无法可靠还原成可输入的 `foo(bar:)`。这时应使用 `SwiftEval.register(method:)` 显式注册入口，或将成员暴露给 ObjC runtime。
 
+#### 符号裁剪后还能从哪些 section 取得信息
+
+| 来源 | 可以恢复 | 不能恢复 / 限制 |
+| --- | --- | --- |
+| `__swift5_types` + `__TEXT.__const` | 类型名、父上下文、metadata accessor；class descriptor 中还可能包含 vtable slot 的方法种类和实现相对地址 | `MethodDescriptor` 只有 flags 与实现指针，没有成员名、参数标签、参数/返回类型；slot 顺序也不是可输入的方法标识 |
+| `__swift5_fieldmd` + `__swift5_reflstr` + `__swift5_typeref` | 存储字段名、字段类型引用、所有权等反射信息；字段类型可通过所属类 descriptor 的上下文解析 | 记录的是 field/type，不是普通方法声明；不能把字段名可靠映射为 getter/setter 实现 |
+| `__swift5_acfuncs` | 被编译器标为 runtime-accessible 的特殊入口，其唯一名称、函数类型和地址；记录带 `no_dead_strip` | 当前主要用于 distributed method accessor，不会为每个普通 Swift 方法生成；入口采用 fully-abstracted ABI，不能冒充普通成员入口调用 |
+| `__swift5_replace` / `__swift5_replac2` | dynamic replacement 的替换关系和函数地址 | 不提供完整普通方法目录，也不保证能得到业务成员名和调用签名 |
+| ObjC runtime | `@objc` / `dynamic` 暴露的 selector、type encoding 与 IMP | 只覆盖 ObjC 可见成员，纯 Swift 方法不会自动出现 |
+
+因此当前回退顺序是：先查 ObjC runtime，再查 `LC_SYMTAB` 中可 demangle 的 Swift 函数；类型和字段信息则独立从
+Swift metadata section 获取。符号表不存在时，工具不会把 vtable 中的匿名地址猜成业务方法，因为无法验证名称、
+签名和调用约定，猜错会直接跳入错误代码地址或按错误 ABI 传参。SwiftDump 采用的也是类型/字段 metadata 路线，
+其项目目前仍将“解析 Swift 函数地址”列为 TODO，并不能作为被裁剪普通方法名的来源。
+
 需要执行一段**任意调试逻辑**（符号被裁剪、类型不可见、要组合多个调用或直接改状态）时，
 可改用[手动注册方法](#手动注册方法)：注册一个闭包，之后用 `name(args)` 调用，参数语法与自动发现
 完全一致。两种路径可混用，注册方法优先于同名类型构造。
@@ -432,7 +447,9 @@ in UIViewController:
   Strip / LTO / Release 包仍会减少可自动发现的纯 Swift 成员。需要在裁剪后稳定调用的入口应使用
   `SwiftEval.register(method:)` 显式注册，或暴露给 ObjC runtime。
 - 纯 Swift 类没有 `@property` 元数据，存储属性以 `(ivar, 所有权)` 行列出；runtime 不给这类 ivar 有效 type encoding 时，
-  用同名 Swift getter 或 ObjC `@property` 的声明类型补出（都没有才退化为 `id`）。
+  优先通过该类 nominal descriptor 指向的 `__swift5_fieldmd` 字段类型 mangling 与 Swift runtime 解析，
+  解析不到再用同名 Swift getter 或 ObjC `@property` 的声明类型补出（都没有才退化为 `id`）。
+  泛型类没有可用的具体类型实参、反射段被裁掉或字段类型解析失败时不猜测类型。
   所有权有 `strong` / `weak` / `unowned` / `unowned(unsafe)` 四种，来自 Mach-O `__swift5_fieldmd` 字段描述符：
   字段类型 mangling 的尾缀 `Xw` / `Xo` / `Xu` 分别对应 weak / unowned / unowned(unsafe)，无尾缀为 strong。
   纯 Swift 存储属性拿不到 `ivar_getTypeEncoding`、`class_getWeakIvarLayout`，且实例化后用 Mirror 读 unowned 会崩，

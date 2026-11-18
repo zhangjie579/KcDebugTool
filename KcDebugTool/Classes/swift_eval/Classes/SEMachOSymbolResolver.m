@@ -117,6 +117,27 @@ static NSString *SEOwnershipFromFieldType(const uint8_t *bytes, size_t limit) {
     return @"strong";
 }
 
+/// 字段类型允许嵌入 symbolic reference，内部可能含 NUL。
+/// 返回真正终止字节之前的长度；未知控制字节不交给 runtime 解析。
+static size_t SEFieldTypeLength(const uint8_t *bytes, size_t limit) {
+    for (size_t index = 0; index < limit && index < 16384;) {
+        uint8_t byte = bytes[index];
+        if (byte == 0) { return index; }
+        if (byte >= 0x01 && byte <= 0x17) {
+            if (index + 5 > limit) { return 0; }
+            index += 5;
+        } else if (byte >= 0x18 && byte <= 0x1f) {
+            if (index + 1 + sizeof(void *) > limit) { return 0; }
+            index += 1 + sizeof(void *);
+        } else if (byte < 0x20) {
+            return 0;
+        } else {
+            index++;
+        }
+    }
+    return 0;
+}
+
 /// 跳过 ObjC encoding 的 const/in/out/bycopy 等前缀修饰符，返回真正决定内存布局的首字符。
 /// `NSInvocation` 的返回和 ivar 编码都可能携带这些修饰符；不先跳过会把可装箱标量误判为未知类型。
 static const char *SESkipTypeQualifiers(const char *type) {
@@ -609,6 +630,86 @@ extern void SEInvokeSwiftArm64(void *function,
         [result addObject:values.count == 1 ? values.anyObject : @""];
     }
     return result.copy;
+}
+
+/// 从类 descriptor 的 FieldDescriptor 字段直接定位，避免全局字段名碰撞。
++ (NSDictionary<NSString *, NSDictionary<NSString *, id> *> *)fieldTypeRecordsForType:(NSString *)typeName {
+    NSDictionary<NSString *, id> *typeRecord = [self swiftTypeMetadataRecordNamed:typeName];
+    if ([typeRecord[@"isGeneric"] boolValue]) { return @{}; }
+    uintptr_t descriptorAddress = [typeRecord[@"descriptor"] unsignedLongLongValue];
+    if (descriptorAddress == 0) { return @{}; }
+    for (uint32_t imageIndex = 0; imageIndex < _dyld_image_count(); imageIndex++) {
+        const struct mach_header_64 *header =
+            (const struct mach_header_64 *)_dyld_get_image_header(imageIndex);
+        if (header == NULL || header->magic != MH_MAGIC_64) { continue; }
+        intptr_t slide = _dyld_get_image_vmaddr_slide(imageIndex);
+        SESectionRange ranges[256];
+        size_t rangeCount = 0;
+        SESectionRange fieldRanges[8];
+        size_t fieldRangeCount = 0;
+        const uint8_t *cursor = (const uint8_t *)(header + 1);
+        for (uint32_t commandIndex = 0; commandIndex < header->ncmds; commandIndex++) {
+            const struct load_command *command = (const struct load_command *)cursor;
+            if (command->cmd == LC_SEGMENT_64) {
+                const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
+                const struct section_64 *sections = (const struct section_64 *)(segment + 1);
+                for (uint32_t sectionIndex = 0; sectionIndex < segment->nsects; sectionIndex++) {
+                    const struct section_64 *section = sections + sectionIndex;
+                    uintptr_t start = (uintptr_t)slide + section->addr;
+                    if (section->size == 0) { continue; }
+                    if (rangeCount < 256) ranges[rangeCount++] =
+                        (SESectionRange){start, start + section->size};
+                    if (fieldRangeCount < 8 &&
+                        strncmp(section->sectname, "__swift5_fieldmd", 16) == 0) {
+                        fieldRanges[fieldRangeCount++] =
+                            (SESectionRange){start, start + section->size};
+                    }
+                }
+            }
+            cursor += command->cmdsize;
+        }
+        if (SESectionByteLimit(descriptorAddress, ranges, rangeCount) < 20) { continue; }
+        const uint8_t *descriptor = (const uint8_t *)descriptorAddress;
+        int32_t fieldDelta = 0;
+        memcpy(&fieldDelta, descriptor + 16, sizeof(fieldDelta));
+        if (fieldDelta == 0) { return @{}; }
+        uintptr_t fieldAddress = (uintptr_t)(descriptor + 16) + (intptr_t)fieldDelta;
+        size_t fieldLimit = SESectionByteLimit(fieldAddress, fieldRanges, fieldRangeCount);
+        if (fieldLimit < 16) { return @{}; }
+        const uint8_t *field = (const uint8_t *)fieldAddress;
+        uint16_t recordSize = 0;
+        uint32_t count = 0;
+        memcpy(&recordSize, field + 10, sizeof(recordSize));
+        memcpy(&count, field + 12, sizeof(count));
+        if (recordSize < 12 || count > 4096 || (uint64_t)count * recordSize > fieldLimit - 16) {
+            return @{};
+        }
+        NSMutableDictionary<NSString *, NSDictionary<NSString *, id> *> *result =
+            NSMutableDictionary.dictionary;
+        for (uint32_t index = 0; index < count; index++) {
+            const uint8_t *record = field + 16 + (uint64_t)index * recordSize;
+            int32_t typeDelta = 0, nameDelta = 0;
+            memcpy(&typeDelta, record + 4, sizeof(typeDelta));
+            memcpy(&nameDelta, record + 8, sizeof(nameDelta));
+            if (typeDelta == 0 || nameDelta == 0) { continue; }
+            uintptr_t typeAddress = (uintptr_t)(record + 4) + (intptr_t)typeDelta;
+            uintptr_t nameAddress = (uintptr_t)(record + 8) + (intptr_t)nameDelta;
+            size_t typeLimit = SESectionByteLimit(typeAddress, ranges, rangeCount);
+            size_t nameLimit = SESectionByteLimit(nameAddress, ranges, rangeCount);
+            if (typeLimit == 0 || nameLimit == 0) { continue; }
+            NSString *name = SEBoundedCString((const uint8_t *)nameAddress, nameLimit);
+            size_t length = SEFieldTypeLength((const uint8_t *)typeAddress, typeLimit);
+            if (name.length == 0 || length == 0) { continue; }
+            result[name] = @{
+                @"mangledTypeAddress": @(typeAddress),
+                @"mangledTypeLength": @(length),
+                @"context": @(descriptorAddress),
+                @"ownership": SEOwnershipFromFieldType((const uint8_t *)typeAddress, typeLimit)
+            };
+        }
+        return result.copy;
+    }
+    return @{};
 }
 
 /// 调用 arm64 汇编桩，把 Swift 调用约定的通用/浮点参数寄存器和 self 上下文写入，再收集返回寄存器。

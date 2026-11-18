@@ -574,7 +574,9 @@ public enum SwiftEval {
     private static func memberNotFound(typeName: String, name: String, offset: Int) -> EvalError {
         let known = SwiftMachOInvoker.memberNames(typeName: typeName)
         let hint = known.isEmpty
-            ? "未在 ObjC runtime 或当前进程 Mach-O 符号表中找到成员（请检查符号裁剪）"
+            ? "类型 metadata 可能仍可见，但 Swift method descriptor 不保存成员名和完整签名；" +
+                "未在 ObjC runtime 或当前进程 Mach-O 符号表中找到该成员。" +
+                "Release 裁剪后请用 SwiftEval.register(method:) 注册入口，或将成员暴露给 ObjC runtime"
             : "可调用成员：\(known.joined(separator: ", "))"
         // 手动注册方法是全局入口，不挂在类型或实例上；写成 obj.name() 时提示正确形式。
         let methodHint = registry.hasMethod(named: name)

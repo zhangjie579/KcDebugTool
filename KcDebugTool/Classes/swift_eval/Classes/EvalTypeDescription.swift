@@ -1,6 +1,13 @@
 import Foundation
 import ObjectiveC
 
+/// SwiftCC 入口可解析 FieldRecord 内含 symbolic reference 的类型 mangling。
+/// 泛型所属类型缺少实参时，由调用处跳过而不是猜测字段类型。
+@_silgen_name("swift_getTypeByMangledNameInContext")
+private func swiftFieldTypeMetadata(_ name: UnsafePointer<CChar>, _ length: Int,
+                                    _ context: UnsafeRawPointer?,
+                                    _ genericArguments: UnsafeRawPointer?) -> UnsafeRawPointer?
+
 /// 调试页「成员清单」结果：沿继承链逐类列出 Properties / Instance Methods / Class Methods。
 ///
 /// 文本刻意沿用 ObjC 私有调试接口 `_methodDescription` 的风格，方便和 LLDB 输出对照：
@@ -199,7 +206,7 @@ public struct EvalTypeDescription {
             notes.append("[swift] 行来自 Mach-O 符号表（Strip / LTO 会减少可见数量），与同名 ObjC selector 重复的已去除。")
         }
         if includeIvars {
-            notes.append("(ivar) 行是 runtime ivar，对应 Swift 存储属性 / ObjC 实例变量；$__lazy_storage_$_name 与 _name 还原成业务属性名，类型取同名 Swift getter 或 @property，取不到时为 id。")
+            notes.append("(ivar) 行是 runtime ivar，对应 Swift 存储属性 / ObjC 实例变量；$__lazy_storage_$_name 与 _name 还原成业务属性名，类型优先取 ObjC encoding，再取 __swift5_fieldmd 字段类型或同名 getter，均不可用时为 id。")
             notes.append("ivar 的 strong / weak / unowned / unowned(unsafe) 来自 Mach-O __swift5_fieldmd 字段描述符的类型 mangling（只读元数据，不实例化、不读属性值）；Strip 掉反射元数据或纯 ObjC ivar 无法判定时退化为不带所有权的 (ivar)。")
         }
         notes.append("(0x...) 是方法 IMP 或 Swift 符号的当前加载地址；地址输入只支持仍存活且已注册到 runtime 的对象。")
@@ -363,6 +370,7 @@ public struct EvalTypeDescription {
         // 展示时再归一化；纯 ObjC 类的 ivar 在 Swift 字段描述符里没有对应项，返回空串即不标注。
         let rawNames = (0..<Int(count)).map { cString(ivar_getName(list.advanced(by: $0).pointee)) }
         let ownership = SEMachOSymbolResolver.fieldOwnership(forIvarNames: rawNames)
+        let fieldRecords = SEMachOSymbolResolver.fieldTypeRecords(forType: NSStringFromClass(owner))
         for index in 0..<Int(count) {
             let ivar = list.advanced(by: index).pointee
             let ivarName = rawNames[index]
@@ -372,15 +380,31 @@ public struct EvalTypeDescription {
             let decoded = EvalObjCTypeName.readable(cString(ivar_getTypeEncoding(ivar)))
                 .trimmingCharacters(in: .whitespaces)
             // 纯 Swift ivar 的 encoding 是空串：按业务名取 Swift getter 或 ObjC @property 的声明类型。
+            let metadataType = fieldRecords[ivarName].flatMap(fieldTypeName)
             let typeName = !decoded.isEmpty && decoded != "?"
-                ? decoded : (propertyTypes[displayName] ?? propertyTypes[ivarName] ?? "id")
+                ? decoded : (metadataType ?? propertyTypes[displayName] ?? propertyTypes[ivarName] ?? "id")
             let separator = typeName.hasSuffix("*") ? "" : " "
-            let qualifier = index < ownership.count && !ownership[index].isEmpty
-                ? "ivar, \(ownership[index])" : "ivar"
+            let fieldOwnership = fieldRecords[ivarName]?["ownership"] as? String
+            let resolvedOwnership = fieldOwnership ?? (index < ownership.count ? ownership[index] : "")
+            let qualifier = !resolvedOwnership.isEmpty ? "ivar, \(resolvedOwnership)" : "ivar"
             properties.append(Member(name: displayName,
                                      signature: "@property (\(qualifier)) \(typeName)\(separator)\(displayName);",
                                      address: nil, source: "ivar", argumentCount: 0))
         }
+    }
+
+    /// 由字段自己的类型 mangling 和所属类 descriptor 解析，不实例化对象或读取字段值。
+    private static func fieldTypeName(_ record: [String: Any]) -> String? {
+        guard let typeAddress = (record["mangledTypeAddress"] as? NSNumber)?.uintValue,
+              let length = (record["mangledTypeLength"] as? NSNumber)?.intValue,
+              length > 0,
+              let mangled = UnsafeRawPointer(bitPattern: typeAddress),
+              let context = (record["context"] as? NSNumber)?.uintValue,
+              let descriptor = UnsafeRawPointer(bitPattern: context) else { return nil }
+        guard let metadata = swiftFieldTypeMetadata(mangled.assumingMemoryBound(to: CChar.self),
+                                                    length, descriptor, nil) else { return nil }
+        let type = unsafeBitCast(metadata, to: Any.Type.self)
+        return shortSwiftType(String(reflecting: type))
     }
 
     /// 枚举当前类/元类直接实现的 Method，保留 IMP 地址和显式参数数以支持调用目录与筛选。
