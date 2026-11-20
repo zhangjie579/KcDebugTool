@@ -309,6 +309,18 @@ public enum SwiftEval {
             return try resolveRoot(name, offset: offset)
         case .construct(let name, let arguments, let offset):
             return try construct(name, arguments: arguments, offset: offset)
+        case .assignment(let target, let source, let offset):
+            guard case .member(let base, let name, isCall: false, _, _) = target else {
+                throw EvalError(kind: .syntax, message: "第 \(offset) 个字符：赋值目标必须是实例属性")
+            }
+            // 先求接收者，再求右值；目标不提供 setter 时不会对 Mirror 字段直接写内存。
+            let receiver = try interpret(base)
+            let assigned = try interpret(source)
+            guard case .value(let raw) = assigned else {
+                throw EvalError(kind: .argument, message: "第 \(offset) 个字符：赋值右侧必须返回值")
+            }
+            try assign(receiver, property: name, value: raw, offset: offset)
+            return .value(raw)
         case .member(let base, let name, let isCall, let arguments, let offset):
             // `Module.Type.member` 的内层节点是 `Module.Type`。只有它确实对应运行时类型时
             // 才折叠成带命名空间的类型，避免把普通对象属性误判为类型名。
@@ -327,6 +339,40 @@ public enum SwiftEval {
             return try invokeMember(receiver, name: name, isCall: isCall,
                                     arguments: arguments, offset: offset)
         }
+    }
+
+    /// 实例属性赋值只走真实 setter；ObjC 通过 selector 的参数编码转换，Swift 通过符号与 ABI 校验。
+    private static func assign(_ receiver: EvalBox, property name: String,
+                               value: Any?, offset: Int) throws {
+        guard case .value(let rawReceiver) = receiver, let rawReceiver = rawReceiver else {
+            throw EvalError(kind: .argument, message: "第 \(offset) 个字符：赋值接收者必须是非 nil 实例")
+        }
+        let object: Any
+        if let address = rawReceiver as? EvalObjectAddress {
+            object = try ObjectiveCEvalBridge.object(at: address.rawValue).value
+        } else {
+            object = rawReceiver
+        }
+        guard Mirror(reflecting: object).displayStyle == .class else {
+            throw EvalError(kind: .unsupported, message: "第 \(offset) 个字符：仅支持引用类型实例的属性赋值")
+        }
+        let item = EvalArguments.Item(label: nil, value: EvalValue(any: value))
+        if let nsObject = object as? NSObject,
+           ObjectiveCEvalBridge.hasDeclaredProperty(object: nsObject, named: name) {
+            let setterName = "set" + name.prefix(1).uppercased() + name.dropFirst()
+            if try ObjectiveCEvalBridge.callInstanceMethod(object: nsObject, name: setterName,
+                                                         labels: ["_"], arguments: [item]) != nil {
+                return
+            }
+        }
+        for typeName in ObjectiveCEvalBridge.runtimeTypeNames(of: object as AnyObject) {
+            if try SwiftMachOInvoker.writeInstanceProperty(object: object, typeName: typeName,
+                                                          name: name, value: item) {
+                return
+            }
+        }
+        throw EvalError(kind: .unsupported,
+                        message: "第 \(offset) 个字符：属性 .\(name) 没有可安全调用的 setter")
     }
 
     /// 将顶层标识符解析为已注册根变量或可发现类型；失败时附带目录快照，便于远程调试纠正输入。

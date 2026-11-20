@@ -103,6 +103,11 @@ final class ObjcDebugTool: NSObject {
 final class ReferenceNode {
     let name: String
     var next: ReferenceNode?
+    var title = "before"
+    var computedTitle: String {
+        get { title }
+        set { title = newValue }
+    }
 
     init(name: String) {
         self.name = name
@@ -418,6 +423,32 @@ check(evaluate("MemoryGraphScanner.members").displayText.contains("identifyObjec
       "类型成员清单")
 check(evaluate("MemoryGraphScanner.version(); ObjcDebugTool.hello()").displayText == "\"hello\"",
       "分号分隔多语句，返回最后一条结果")
+
+// MARK: - 实例属性赋值
+
+let nodeAddress = addressExpression(of: cyclicNode)
+let assignedTitle = evaluate(nodeAddress + ".next.next.title = \"after\"")
+check(assignedTitle.isSuccess && assignedTitle.displayText == "\"after\"" && cyclicNode.title == "after",
+      "对象地址三级链式访问后写入纯 Swift 存储属性")
+check(evaluate("cyclicNode.computedTitle = \"computed\"").isSuccess &&
+      cyclicNode.title == "computed", "纯 Swift 计算属性通过 setter 写入")
+let assignedNumber = evaluate("objcTool.objectValue = 19")
+check(assignedNumber.isSuccess && objcToolObject.objectValue == 19,
+      "ObjC 属性通过声明过的 setter 写入")
+objcToolObject.objectValue = 7
+check(evaluate("cyclicNode.name = \"invalid\"").error?.kind == .unsupported,
+      "只读属性不绕过 setter 写内存")
+check(evaluate("cyclicNode.title = true").error != nil && cyclicNode.title == "computed",
+      "类型不匹配时不修改原属性")
+check(evaluate("cyclicNode.next = nil").isSuccess && cyclicNode.next == nil,
+      "Optional 对象属性支持写入 nil")
+cyclicNode.next = cyclicNode
+check(evaluate("cyclicNode.next = 0x1").error != nil && cyclicNode.next === cyclicNode,
+      "非法对象地址不会写入属性")
+check(evaluate("0x1.title = \"x\"").error?.kind == .argument,
+      "非法接收者地址安全报错")
+check(evaluate("cyclicNode.title() = \"x\"").error?.kind == .syntax,
+      "调用结果不能作为赋值目标")
 
 // MARK: - 错误路径
 

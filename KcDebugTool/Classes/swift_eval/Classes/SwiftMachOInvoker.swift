@@ -9,6 +9,7 @@ private struct SwiftMachOMethod {
         case classMethod
         case staticMethod
         case instanceProperty
+        case instanceSetter
         case classProperty
         case staticProperty
         case initializer
@@ -95,7 +96,8 @@ enum SwiftMachOInvoker {
                   !demangled.contains("with unmangled suffix"),
                   !demangled.contains(".__"),
                   !demangled.hasSuffix(".deinit"),
-                  let method = parseMember(raw, requestedType: nil) else { continue }
+                  let method = parseMember(raw, requestedType: nil),
+                  method.kind != .instanceSetter else { continue }
             let key = SwiftEvalRegistry.key(method.qualifiedTypeName)
             guard wanted.contains(key) else { continue }
             result[key, default: []].append(description(of: method))
@@ -108,7 +110,7 @@ enum SwiftMachOInvoker {
         let group: MemberDescription.Group
         let isClassMember: Bool
         switch method.kind {
-        case .instanceProperty:
+        case .instanceProperty, .instanceSetter:
             group = .property
             isClassMember = false
         case .classProperty, .staticProperty:
@@ -217,6 +219,23 @@ enum SwiftMachOInvoker {
         // 用对象地址作上下文调用零参数 getter；失败时静默放过，交由后续分支继续处理。
         let context = objectAddress(object)
         return try? invoke(property, context: context, arguments: [])
+    }
+
+    /// 只调用符号表明确标识的属性 setter；Mirror 字段本身不提供安全写入入口。
+    static func writeInstanceProperty(object: Any, typeName: String, name: String,
+                                      value: EvalArguments.Item) throws -> Bool {
+        let candidates = methods(typeName: typeName).filter {
+            $0.kind == .instanceSetter && $0.memberName == name
+        }
+        guard !candidates.isEmpty else { return false }
+        guard let setter = unique(candidates) else {
+            throw ambiguous(typeName: typeName, member: name, candidates: candidates)
+        }
+        let context = objectAddress(object)
+        _ = try withExtendedLifetime(object) {
+            try invoke(setter, context: context, arguments: [value])
+        }
+        return true
     }
 
     /// Mirror 的 class children 只包含当前层声明的存储属性，父类属性需要继续遍历
@@ -615,7 +634,7 @@ enum SwiftMachOInvoker {
             kindPrefix = .instanceMethod
         }
         let body = String(demangled.dropFirst(prefix.count))
-        // 先尝试按 `.getter :` 形式识别为属性符号，识别不到再走普通函数解析。
+        // 先识别属性 getter / setter，避免将访问器误当普通方法。
         if let property = parsePropertyBody(body, address: address, mangled: mangled,
                                             demangled: demangled, requestedType: requestedType,
                                             methodKind: kindPrefix) {
@@ -649,13 +668,14 @@ enum SwiftMachOInvoker {
                                 returnType: returnType, kind: kind)
     }
 
-    /// 识别 demangle 文本中的 `.getter :` 形式，将其映射为对应的实例/class/static 属性符号。
+    /// 识别 demangle 文本中的 getter / setter；setter 参数按属性类型走现有 ABI 校验。
     private static func parsePropertyBody(_ body: String, address: UInt, mangled: String,
                                           demangled: String, requestedType: String?,
                                           methodKind: SwiftMachOMethod.Kind) -> SwiftMachOMethod? {
-        let marker = ".getter : "
-        guard let getterRange = body.range(of: marker) else { return nil }
-        let head = String(body[..<getterRange.lowerBound])
+        let isSetter = body.contains(".setter : ")
+        let marker = isSetter ? ".setter : " : ".getter : "
+        guard let accessorRange = body.range(of: marker) else { return nil }
+        let head = String(body[..<accessorRange.lowerBound])
         guard let dot = head.lastIndex(of: ".") else { return nil }
         let qualifiedType = String(head[..<dot])
         let propertyName = normalizedMemberName(String(head[head.index(after: dot)...]))
@@ -670,12 +690,15 @@ enum SwiftMachOInvoker {
         switch methodKind {
         case .staticMethod: kind = .staticProperty
         case .classMethod: kind = .classProperty
-        default: kind = .instanceProperty
+        default: kind = isSetter ? .instanceSetter : .instanceProperty
         }
+        // 类型属性 setter 暂不作为实例赋值入口，防止将 metadata 当作对象 self。
+        if isSetter && kind != .instanceSetter { return nil }
+        let propertyType = String(body[accessorRange.upperBound...])
         return SwiftMachOMethod(address: address, mangled: mangled, demangled: demangled,
                                 qualifiedTypeName: qualifiedType, memberName: propertyName,
-                                labels: [], parameterTypes: [],
-                                returnType: String(body[getterRange.upperBound...]), kind: kind)
+                                labels: [], parameterTypes: isSetter ? [propertyType] : [],
+                                returnType: isSetter ? "()" : propertyType, kind: kind)
     }
 
     /// 在嵌套泛型、数组和元组外层寻找第一个冒号，拆出外部标签与完整参数类型。

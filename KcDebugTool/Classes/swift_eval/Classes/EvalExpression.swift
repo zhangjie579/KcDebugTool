@@ -4,7 +4,7 @@ import Foundation
 ///
 /// ```
 /// 程序     := 表达式 (';' 表达式)* ';'?
-/// 表达式   := 主体 ('.' 成员 [ '(' 实参 ')' ])*
+/// 表达式   := 主体 ('.' 成员 [ '(' 实参 ')' ])* [ '=' 表达式 ]
 /// 主体     := 标识符 | 标识符 '(' 实参 ')' | 字面量 | 数组/字典 | '(' 表达式 ')'
 /// 实参     := (标识符 ':')? 表达式 (',' ...)*
 /// ```
@@ -30,6 +30,7 @@ indirect enum EvalNode {
     case identifier(String, Int)
     case construct(String, [EvalCallArgument], Int)
     case member(EvalNode, String, isCall: Bool, [EvalCallArgument], Int)
+    case assignment(EvalNode, EvalNode, Int)
 }
 
 // MARK: - 词法
@@ -91,7 +92,7 @@ private struct EvalLexer {
                 tokens.append(Token(kind: .string(try readString()), offset: start))
                 continue
             }
-            if ".,:()[];".contains(character) {
+            if ".,:()[];=".contains(character) {
                 // 单字符标点直接成 token：`.` `,` `:` `(` `)` `[` `]` `;`。
                 advance()
                 tokens.append(Token(kind: .punctuation(character), offset: start))
@@ -309,6 +310,14 @@ struct EvalParser {
             } else {
                 node = .member(node, name, isCall: false, [], memberOffset)
             }
+        }
+        if match("=") {
+            let assignmentOffset = tokens[index - 1].offset
+            guard case .member(_, _, isCall: false, _, _) = node else {
+                throw EvalError(kind: .syntax,
+                                message: "第 \(assignmentOffset) 个字符：赋值目标必须是实例属性")
+            }
+            node = .assignment(node, try parseExpression(), assignmentOffset)
         }
         return node
     }

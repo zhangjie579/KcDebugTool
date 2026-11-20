@@ -12,7 +12,7 @@ SwiftEval.evaluate("MemoryGraphScanner.identifyObjects()")
 
 iOS 上没有 JIT，**不能执行任意 Swift 源码**（`let` / `if` / `for` / 闭包 / 定义类型都不支持）。
 本工具解析的是固定的一小套语法：`Type.method(实参)`、`name(实参)`（手动注册方法）、类型构造、
-链式调用、属性、字面量。
+链式调用、属性读取与赋值、字面量。
 
 调用分三条路径：
 
@@ -23,6 +23,8 @@ iOS 上没有 JIT，**不能执行任意 Swift 源码**（`let` / `if` / `for` /
 | **ObjC runtime** | ObjC / `@objc` 的类方法、实例方法和类型属性 getter；对象及整数、浮点、Bool 参数和返回值 | 成员在 ObjC runtime 可见 |
 
 对象实例的存储属性统一通过 `Mirror` 读取，并沿 `superclassMirror` 包含父类属性；读取存储属性不调用 getter、不走 KVC。仅当 Mirror 和 Swift 符号都找不到、且该成员是 ObjC runtime 明确声明的 `@property`（如 `UIViewController.view`）时，才回退到 KVC `value(forKey:)`，这一步会执行 getter。普通零参数方法不会被当作属性 getter 调用。
+
+实例属性可写成 `0x1234.child.title = "new"`。求值器先沿链读取接收者，再通过 ObjC 已声明属性的 setter 或 Mach-O 中明确可见的 Swift setter 写入；右值类型仍需符合目标参数。只读属性、值类型实例、`nil` 接收者及无法安全调用的 setter 会报错。赋值表达式返回右侧的值。
 
 **自动发现是默认路径，无需注册**：工具遍历当前进程已加载镜像的 `LC_SYMTAB`，
 demangle 后按类型、方法名、参数标签及数量选出唯一符号，再使用实际加载地址调用。
@@ -141,6 +143,7 @@ let detailed = SwiftEval.evaluate("currentView", maxDepth: 8)
 | `Type.method().count` | 链式调用 / 通用属性 |
 | `Type.staticProperty` / `Type.classProperty` | Swift static / class 属性或 ObjC 类属性 |
 | `object.property` / `Type().property` | 已有对象或临时实例的对象属性 |
+| `object.child.property = "new"` | 给引用类型实例的可写属性赋值；返回右值 |
 | `0x12f945200.test()` / `0x12f945200.property` | 以当前进程内仍存活的对象地址调用实例方法或读取属性 |
 | `0x12f945200.$layoutMode` | 读取 property wrapper 暴露的 projected-value 成员；`$` 仅允许在点号后 |
 | `.description` `.count` `.isEmpty` `.typeName` `.json` `.fields` | 任意返回值都可用的通用属性 |
