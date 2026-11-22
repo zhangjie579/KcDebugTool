@@ -11,6 +11,7 @@
 #import "NSObject+KcRuntimeExtension.h"
 #import "KcAutoLayoutCheck.h"
 #import "UIColor+KcDebugTool.h"
+#import <math.h>
 @import KcDebugSwift;
 
 @implementation UIView (KcDebugTool)
@@ -330,98 +331,78 @@
 
 #pragma mark - 检查
 
-/// 不能响应事件的原因
-/*
-  不能处理event:
-     1.hidden
-     2.userInteractionEnabled
-     3.alpha < 0.01
-     4.bounds不包括point
-     5._isAnimatedUserInteractionEnabled
- 
- - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
- {
-     if (self.hidden || !self.userInteractionEnabled || self.alpha < 0.01 || ![self pointInside:point withEvent:event] || ![self _isAnimatedUserInteractionEnabled]) {
-         return nil;
-     } else {
-         /// 倒序，从最top的开始遍历
-         for (UIView *subview in [self.subviews reverseObjectEnumerator]) {
-             /// [subview convertPoint:point fromView:self] 获得point对应在child上面的点
-             /// 看child是否可以处理
-             UIView *hitView = [subview hitTest:[subview convertPoint:point fromView:self] withEvent:event];
-             if (hitView) {
-                 return hitView;
-             }
-         }
-         return self;
-     }
- }
- */
+/// 默认检查 bounds 中心；frame 属于父坐标系，不能作为自身坐标使用。
 - (BOOL)kc_checkHitTestQuestion {
-    UIView *currentView = self;
-    UIResponder *nextResponder = self;
-    
-    while (nextResponder && currentView) {
-        if (currentView.isHidden) {
-            [KcLogParamModel logWithKey:@"❌不能点击" format:@"isHidden == true, %@ 属性信息: %@", currentView, [currentView kc_debug_findPropertyName]];
-            return false;
+    // 避免在后台线程读取 UIView 的几何信息。
+    if (![NSThread isMainThread]) {
+        [KcLogParamModel logWithKey:@"⚠️点击检查" format:@"请在主线程调用 kc_checkHitTestQuestion"];
+        return NO;
+    }
+    return [self kc_checkHitTestQuestionAtPoint:CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds))];
+}
+
+- (BOOL)kc_checkHitTestQuestionAtPoint:(CGPoint)point {
+    if (![NSThread isMainThread]) {
+        [KcLogParamModel logWithKey:@"⚠️点击检查" format:@"请在主线程调用 kc_checkHitTestQuestionAtPoint:"];
+        return NO;
+    }
+    if (!isfinite(point.x) || !isfinite(point.y)) {
+        [KcLogParamModel logWithKey:@"❌不能点击" format:@"检查点不是有限坐标: %@", NSStringFromCGPoint(point)];
+        return NO;
+    }
+
+    UIWindow *window = [self isKindOfClass:UIWindow.class] ? (UIWindow *)self : self.window;
+    if (!window) {
+        [KcLogParamModel logWithKey:@"❌不能点击" format:@"视图未加入 UIWindow: %@", self];
+        return NO;
+    }
+
+    // 从事件入口检查，才能覆盖兄弟视图遮挡和祖先自定义 hitTest 的情况。
+    // 不提前用 bounds/pointInside 排除，允许自定义 hitTest 扩大响应区域。
+    CGPoint windowPoint = [self convertPoint:point toView:window];
+    UIView *hitView = [window hitTest:windowPoint withEvent:nil];
+    BOOL hitsTarget = hitView && (hitView == self || [hitView isDescendantOfView:self]);
+    if (hitsTarget) {
+        // disabled 不一定导致 hitTest 返回 nil，但控件不会处理 touch/action。
+        // 成功分支只判断目标；祖先控件对命中的影响交给实际 hitTest 处理。
+        if ([self isKindOfClass:UIControl.class] && !((UIControl *)self).isEnabled) {
+            [KcLogParamModel logWithKey:@"❌不能点击" format:@"UIControl.enabled == NO，命中但控件不会响应: %@", self];
+            return NO;
         }
-        
-        if (!currentView.isUserInteractionEnabled) {
-            [KcLogParamModel logWithKey:@"❌不能点击" format:@"isUserInteractionEnabled == false, %@ 属性信息: %@", currentView, [currentView kc_debug_findPropertyName]];
-            return false;
+        [KcLogParamModel logWithKey:@"✅命中检查通过" format:@"目标: %@, point: %@, hitView: %@。仅表示所属 window 内命中目标或其子视图，不保证 action/手势回调执行；仍需排查手势竞争、cancelsTouchesInView、UIScrollView 的触摸延迟/取消、动画交互限制及其他 window 遮挡。", self, NSStringFromCGPoint(point), hitView];
+        return YES;
+    }
+
+    [KcLogParamModel logWithKey:@"❌不能点击" format:@"目标: %@, point: %@, windowPoint: %@, window.hitTest 返回: %@", self, NSStringFromCGPoint(point), NSStringFromCGPoint(windowPoint), hitView];
+
+    // 失败后再收集标准命中条件；沿 superview 遍历，响应链不等于视图树。
+    // 这些是诊断线索，最终结果以上面的 window.hitTest 为准。
+    for (UIView *view = self; view; view = view.superview) {
+        CGPoint localPoint = [view convertPoint:point fromView:self];
+        if (view.isHidden) {
+            [KcLogParamModel logWithKey:@"点击检查线索" format:@"hidden == YES: %@", view];
         }
-        
-        if (currentView.alpha < 0.01) {
-            [KcLogParamModel logWithKey:@"❌不能点击" format:@"self.alpha < 0.01, %@ 属性信息: %@", currentView, [currentView kc_debug_findPropertyName]];
-            return false;
+        if (!view.isUserInteractionEnabled) {
+            [KcLogParamModel logWithKey:@"点击检查线索" format:@"userInteractionEnabled == NO: %@", view];
         }
-        
-        if (currentView.frame.size.width <= 0 || currentView.frame.size.height <= 0) {
-            [KcLogParamModel logWithKey:@"❌不能点击" format:@"self.size <= 0, %@ 属性信息: %@", currentView, [currentView kc_debug_findPropertyName]];
-            return false;
+        if (view.alpha <= 0.01) {
+            [KcLogParamModel logWithKey:@"点击检查线索" format:@"alpha <= 0.01 (%.5f)，处于命中透明度阈值附近或以下: %@", view.alpha, view];
         }
-        
-        CGPoint centerPoint = [currentView convertPoint:CGPointMake(self.frame.size.width / 2, self.frame.size.height / 2) fromView:self];
-        
-        // pointInside
-        if (![currentView pointInside:centerPoint withEvent:nil]) {
-            [KcLogParamModel logWithKey:@"❌不能点击" format:@"pointInside:withEvent: = NO, %@ 属性信息: %@", currentView, [currentView kc_debug_findPropertyName]];
-            return false;
+        if ([view isKindOfClass:UIControl.class] && !((UIControl *)view).isEnabled) {
+            [KcLogParamModel logWithKey:@"点击检查线索" format:@"UIControl.enabled == NO: %@", view];
         }
-        
-        // hitTest 看看返回什么
-        UIView *_Nullable hitView = [currentView hitTest:centerPoint withEvent:nil];
-        if (!hitView || ![hitView isEqual:self]) {
-            [KcLogParamModel logWithKey:@"❌不能点击" format:@"hitTest返回值: %@ 属性信息: %@", hitView, [hitView kc_debug_findPropertyName]];
-            return false;
+        if (![view pointInside:localPoint withEvent:nil]) {
+            [KcLogParamModel logWithKey:@"点击检查线索" format:@"pointInside:withEvent: == NO, point: %@, bounds: %@, view: %@；默认命中会跳过该分支，与 clipsToBounds 无关，自定义 hitTest 可能改变此行为。", NSStringFromCGPoint(localPoint), NSStringFromCGRect(view.bounds), view];
         }
-        
-        UIView *superview = currentView.superview;
-        if (superview) {
-            CGRect superBounds = CGRectMake(0, 0, superview.frame.size.width, superview.frame.size.height);
-            
-            BOOL isContain = CGRectContainsPoint(superBounds, currentView.center);
-            
-            if (!isContain) {
-                [KcLogParamModel logWithKey:@"❌不能点击" format:@"尺寸与super对不上, frame: %@, superBounds: %@, %@ 属性信息: %@", NSStringFromCGRect(currentView.frame), NSStringFromCGRect(superBounds), currentView, [currentView kc_debug_findPropertyName]];
-                return false;
-            }
+        if (view.layer.animationKeys.count > 0) {
+            [KcLogParamModel logWithKey:@"点击检查线索" format:@"存在动画: %@, view: %@；检查动画是否允许交互以及 presentation/model 坐标差异，存在动画本身不等于不能点击。", view.layer.animationKeys, view];
         }
-        
-        nextResponder = nextResponder.nextResponder;
-        currentView = nil;
-        
-        if (nextResponder) {
-            if ([nextResponder isKindOfClass:[UIView self]]) {
-                currentView = (UIView *)nextResponder;
-            } else if ([nextResponder isKindOfClass:[UIViewController self]]) {
-                currentView = ((UIViewController *)nextResponder).view;
-            }
+        if (view == window) {
+            break;
         }
     }
-    
-    return true;
+    [KcLogParamModel logWithKey:@"点击检查线索" format:@"若标准属性正常，请检查祖先自定义 hitTest:withEvent: 是否返回其他视图，以及返回的 hitView 所在分支是否遮挡目标。"];
+    return NO;
 }
 
 /// 查找圆角的问题
