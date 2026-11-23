@@ -344,7 +344,8 @@ public enum SwiftEval {
     /// 实例属性赋值只走真实 setter；ObjC 通过 selector 的参数编码转换，Swift 通过符号与 ABI 校验。
     private static func assign(_ receiver: EvalBox, property name: String,
                                value: Any?, offset: Int) throws {
-        guard case .value(let rawReceiver) = receiver, let rawReceiver = rawReceiver else {
+        guard case .value(let rawReceiver) = receiver,
+              let rawReceiver = unwrappedOptional(rawReceiver) else {
             throw EvalError(kind: .argument, message: "第 \(offset) 个字符：赋值接收者必须是非 nil 实例")
         }
         let object: Any
@@ -365,7 +366,10 @@ public enum SwiftEval {
                 return
             }
         }
-        for typeName in ObjectiveCEvalBridge.runtimeTypeNames(of: object as AnyObject) {
+        // 嵌套 Swift 类在 ObjC runtime 中可能只有 _TtCC... 名称；符号表使用 Swift 全名。
+        let typeNames = [String(reflecting: Swift.type(of: object))] +
+            ObjectiveCEvalBridge.runtimeTypeNames(of: object as AnyObject)
+        for typeName in typeNames {
             if try SwiftMachOInvoker.writeInstanceProperty(object: object, typeName: typeName,
                                                           name: name, value: item) {
                 return

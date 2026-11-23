@@ -116,11 +116,12 @@ final class ReferenceNode {
 
 final class OptionalModelHost {
     final class Item {
-        let moduleInfo = ModuleInfo()
+        var moduleInfo = ModuleInfo(id: 17)
+        var label = "before"
     }
 
     struct ModuleInfo {
-        let id = 17
+        let id: Int
     }
 
     var model: Item? = Item()
@@ -196,6 +197,7 @@ SwiftEval.register(root: "scanner", object: scannerObject)
 SwiftEval.register(root: "objcTool", object: objcToolObject)
 SwiftEval.register(root: "cyclicNode", object: cyclicNode)
 SwiftEval.register(root: "optionalModelHost", object: optionalModelHost)
+SwiftEval.register(root: "replacementModuleInfo") { OptionalModelHost.ModuleInfo(id: 99) }
 if let dynamicTool = dynamicTool {
     SwiftEval.register(root: "dynamicTool", object: dynamicTool)
 }
@@ -225,10 +227,19 @@ check(evaluate("MemoryGraphScanner.defaultDepth").displayText == "2", "Swift sta
 check(evaluate("MemoryGraphScanner.scannerKind").displayText == "\"memory-graph\"", "Swift class 属性")
 check(evaluate("optionalModelHost.model.moduleInfo.id").displayText == "17",
       "Optional 包装的对象可继续读取嵌套属性")
+let optionalHostAddress = addressExpression(of: optionalModelHost)
+let optionalAssignment = evaluate(optionalHostAddress + ".model.label = \"after\"")
+check(optionalAssignment.isSuccess && optionalModelHost.model?.label == "after",
+      "对象地址的 Optional 属性可作为赋值接收者")
+let structAssignment = evaluate(optionalHostAddress + ".model.moduleInfo = replacementModuleInfo")
+check(structAssignment.error?.kind == .unsupported && optionalModelHost.model?.moduleInfo.id == 17,
+      "结构体属性的 setter 参数不支持时拒绝写入")
 optionalModelHost.model = nil
 let nilModelResult = evaluate("optionalModelHost.model.moduleInfo.id")
 check(nilModelResult.isSuccess && nilModelResult.displayText == "nil",
       "Optional.none 的嵌套属性访问保持安全链语义")
+check(evaluate(optionalHostAddress + ".model.label = \"ignored\"").error?.kind == .argument,
+      "Optional.none 不会执行属性赋值")
 optionalModelHost.model = OptionalModelHost.Item()
 check(evaluate("MemoryGraphScanner().objectCount").displayText == "3", "Swift 对象属性")
 check(evaluate("scanner.objectCount").displayText == "3", "Swift 已有对象属性")
