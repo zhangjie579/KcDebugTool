@@ -28,7 +28,7 @@ TODO: Add long description of the pod here.
   s.source           = { :git => 'https://github.com/zhangjie579/KcDebugTool.git', :tag => s.version.to_s }
   # s.social_media_url = 'https://twitter.com/<TWITTER_USERNAME>'
 
-  s.ios.deployment_target = '9.0'
+  s.ios.deployment_target = '11.0'
   s.swift_version = "5.0"
 
 #  s.source_files = 'KcDebugTool/Classes/**/*'
@@ -119,6 +119,18 @@ TODO: Add long description of the pod here.
       ss.source_files = 'KcDebugTool/Classes/zombieMRC/**/*'
       ss.dependency 'KcDebugTool/zombieTool'
   end
+  
+  # 内存图
+  s.subspec 'memory_graph' do |ss|
+      ss.source_files = 'KcDebugTool/Classes/memory-graph/Sources/**/*'
+      ss.exclude_files = [
+        "KcDebugTool/Classes/memory-graph/Sources/main.swift",
+      ]
+      ss.dependency 'KcDebugTool/zombieTool'
+      ss.frameworks = 'UIKit'
+  end
+  
+#  s.vendored_frameworks = 'KcDebugTool/frida/FridaGadget.dylib'
   
   # MARK: - Zombie 野指针
   # s.subspec 'Zombie' do |ss|

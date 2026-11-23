@@ -10,12 +10,12 @@ import WebKit
 
 @objc(MemoryGraphManager)
 @objcMembers
-class MemoryGraphManager: NSObject {
+public class MemoryGraphManager: NSObject {
     /// 引用关系快速排查：以当前触发入口的页面 VC 为目标，识别堆对象（秒级）后
     /// 反查目标被谁引用、它引用了谁。weak / unowned 单独展示，不参与强引用层级扩展。
     /// 注意：全量内存图（scan() + 模板导出）在大堆上耗时分钟级，排查单对象勿用。
     /// [MemoryGraphManager captureMemoryGraphFrom:self];
-    class func captureMemoryGraph(from viewController: UIViewController) {
+    public class func captureMemoryGraph(from viewController: UIViewController) {
         let address = "0x" + String(unsafeBitCast(viewController, to: UInt.self), radix: 16)
         captureMemoryGraph(forAddress: address, from: viewController)
     }
@@ -26,7 +26,7 @@ class MemoryGraphManager: NSObject {
     /// - Parameters:
     ///   - addressString: 对象堆地址，如 "0x14f2ab100"
     ///   - viewController: 用于展示报告页 / 错误提示的当前页面
-    class func captureMemoryGraph(forAddress addressString: String, from viewController: UIViewController) {
+    public class func captureMemoryGraph(forAddress addressString: String, from viewController: UIViewController) {
         guard let address = parseHexAddress(addressString) else {
             DispatchQueue.main.async {
                 let alert = UIAlertController(
@@ -240,7 +240,9 @@ class MemoryGraphManager: NSObject {
         // unconfirmedStrong 沿用强引用配色但用虚线区分「未确证」，不冒充 confirmed。
         func edgeStyle(_ edge: ReferenceEdge, isIncoming: Bool,
                        inCycle: Bool) -> (color: String, arrow: String, dashed: Bool) {
-            if inCycle { return ("#e03131", "arrowCycle", false) }
+            if inCycle && edge.ownership.participatesInCycleDetection {
+                return ("#e03131", "arrowCycle", false)
+            }
             switch edge.ownership {
             case .unknown: return ("#868e96", "arrowUnknown", true)
             case .weak: return ("#b26a00", "arrowWeak", true)
@@ -256,9 +258,9 @@ class MemoryGraphManager: NSObject {
         // 连线先画，节点后画，避免线压在节点上
         func edgePath(from: (x: Int, y: Int), to: (x: Int, y: Int), label: String,
                       color: String, arrow: String, dashed: Bool = false,
-                      strokeWidth: Double = 1.6) -> String {
-            let x1 = from.x + boxW, y1 = from.y + boxH / 2
-            let x2 = to.x, y2 = to.y + boxH / 2
+                      strokeWidth: Double = 1.6, verticalOffset: Int = 0) -> String {
+            let x1 = from.x + boxW, y1 = from.y + boxH / 2 + verticalOffset
+            let x2 = to.x, y2 = to.y + boxH / 2 + verticalOffset
             let midX = (x1 + x2) / 2
             let curve = "M\(x1) \(y1) C\(midX) \(y1), \(midX) \(y2), \(x2) \(y2)"
             let dash = dashed ? " stroke-dasharray='5 3'" : ""
@@ -267,6 +269,11 @@ class MemoryGraphManager: NSObject {
             """
             return "<path d='\(curve)' fill='none' stroke='\(color)' stroke-width='\(strokeWidth)'\(dash) marker-end='url(#\(arrow))'/>" + text
         }
+        // 同一对节点可能同时有 strong 与 weak 边；路径重叠时实线会填满虚线空隙。
+        // 先收集可见边，再给并行线分配不同的垂直位置。
+        typealias DrawnEdge = (edge: ReferenceEdge, source: (x: Int, y: Int),
+                               destination: (x: Int, y: Int), isIncoming: Bool)
+        var drawnEdges: [DrawnEdge] = []
         // incoming：L1 -> 目标，L2 -> 对应 L1 来源
         for edge in report.incoming {
             let level = report.incomingLevel[edge.from] ?? 1
@@ -276,23 +283,32 @@ class MemoryGraphManager: NSObject {
                 ? position[nodeKey(centerColumn, report.address)]
                 : columnIndex(forLevel: level - 1).flatMap { position[nodeKey($0, edge.to)] }
             guard let destination = target else { continue }
-            let inCycle = isCycleEdge(edge)
-            let style = edgeStyle(edge, isIncoming: true, inCycle: inCycle)
-            svg += edgePath(from: source, to: destination,
-                            label: edge.ivarName ?? "",
-                            color: style.color, arrow: style.arrow,
-                            dashed: style.dashed, strokeWidth: inCycle ? 2.6 : 1.6)
+            drawnEdges.append((edge, source, destination, true))
         }
         // outgoing（含 weak / unowned 非强边，虚线）：目标 -> 各引用对象
         for edge in allOutgoing {
             guard let center = position[nodeKey(centerColumn, report.address)],
                   let destination = position[nodeKey(outgoingColumn, edge.to)] else { continue }
-            let inCycle = isCycleEdge(edge)
-            let style = edgeStyle(edge, isIncoming: false, inCycle: inCycle)
-            svg += edgePath(from: center, to: destination,
-                            label: edge.ivarName ?? "",
+            drawnEdges.append((edge, center, destination, false))
+        }
+        func pathKey(_ item: DrawnEdge) -> String {
+            "\(item.source.x),\(item.source.y)>\(item.destination.x),\(item.destination.y)"
+        }
+        var pathCounts: [String: Int] = [:]
+        for item in drawnEdges { pathCounts[pathKey(item), default: 0] += 1 }
+        var pathIndexes: [String: Int] = [:]
+        for item in drawnEdges {
+            let key = pathKey(item)
+            let index = pathIndexes[key, default: 0]
+            pathIndexes[key] = index + 1
+            let offset = (2 * index - (pathCounts[key] ?? 1) + 1) * 6
+            let inCycle = isCycleEdge(item.edge) && item.edge.ownership.participatesInCycleDetection
+            let style = edgeStyle(item.edge, isIncoming: item.isIncoming, inCycle: inCycle)
+            svg += edgePath(from: item.source, to: item.destination,
+                            label: item.edge.ivarName ?? "",
                             color: style.color, arrow: style.arrow,
-                            dashed: style.dashed, strokeWidth: inCycle ? 2.6 : 1.6)
+                            dashed: style.dashed, strokeWidth: inCycle ? 2.6 : 1.6,
+                            verticalOffset: offset)
         }
         // 节点
         for (columnIndex, column) in columns.enumerated() {
