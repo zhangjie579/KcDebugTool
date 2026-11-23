@@ -501,7 +501,7 @@ public enum SwiftEval {
     /// 对 nil 采用安全链语义；对对象地址先经 isa 验证后再形成临时非持有引用。
     private static func invokeOnValue(_ value: Any?, name: String, isCall: Bool,
                                       arguments: EvalArguments, offset: Int) throws -> EvalBox {
-        guard let value = value else {
+        guard let value = unwrappedOptional(value) else {
             // 可选链语义：对 nil 取成员不报错，继续得到 nil，便于把结果 JSON 化
             return .value(nil)
         }
@@ -570,6 +570,17 @@ public enum SwiftEval {
             }
         }
         throw memberNotFound(typeName: typeName, name: name, offset: offset)
+    }
+
+    /// Mirror 的存储字段会以 Any 保留 Optional 包装；链式访问前需逐层解开。
+    private static func unwrappedOptional(_ value: Any?) -> Any? {
+        var current = value
+        while let wrapped = current {
+            let mirror = Mirror(reflecting: wrapped)
+            guard mirror.displayStyle == .optional else { return wrapped }
+            current = mirror.children.first?.value
+        }
+        return nil
     }
 
     /// 把 ObjC/Swift 桥的 void 与有值结果映射回解释器状态，保留后续链式调用所需的区别。

@@ -114,6 +114,18 @@ final class ReferenceNode {
     }
 }
 
+final class OptionalModelHost {
+    final class Item {
+        let moduleInfo = ModuleInfo()
+    }
+
+    struct ModuleInfo {
+        let id = 17
+    }
+
+    var model: Item? = Item()
+}
+
 @objcMembers
 class RuntimeBaseTool: NSObject {
     var inheritedCallCount = 0
@@ -165,6 +177,7 @@ let projectedMemberProbe = ProjectedMemberProbe()
 let objcToolObject = ObjcDebugTool()
 let cyclicNode = ReferenceNode(name: "root")
 cyclicNode.next = cyclicNode
+let optionalModelHost = OptionalModelHost()
 let dynamicClassName = "RuntimeBaseTool_Aspects_"
 let dynamicClass = objc_allocateClassPair(RuntimeBaseTool.self, dynamicClassName, 0)
 if let dynamicClass = dynamicClass {
@@ -182,6 +195,7 @@ swift_eval_selftestCompressedType.compressedLookupMarker()
 SwiftEval.register(root: "scanner", object: scannerObject)
 SwiftEval.register(root: "objcTool", object: objcToolObject)
 SwiftEval.register(root: "cyclicNode", object: cyclicNode)
+SwiftEval.register(root: "optionalModelHost", object: optionalModelHost)
 if let dynamicTool = dynamicTool {
     SwiftEval.register(root: "dynamicTool", object: dynamicTool)
 }
@@ -209,6 +223,13 @@ check(reset.isSuccess && !reset.hasReturnValue && reset.typeName == "Void",
 
 check(evaluate("MemoryGraphScanner.defaultDepth").displayText == "2", "Swift static 属性")
 check(evaluate("MemoryGraphScanner.scannerKind").displayText == "\"memory-graph\"", "Swift class 属性")
+check(evaluate("optionalModelHost.model.moduleInfo.id").displayText == "17",
+      "Optional 包装的对象可继续读取嵌套属性")
+optionalModelHost.model = nil
+let nilModelResult = evaluate("optionalModelHost.model.moduleInfo.id")
+check(nilModelResult.isSuccess && nilModelResult.displayText == "nil",
+      "Optional.none 的嵌套属性访问保持安全链语义")
+optionalModelHost.model = OptionalModelHost.Item()
 check(evaluate("MemoryGraphScanner().objectCount").displayText == "3", "Swift 对象属性")
 check(evaluate("scanner.objectCount").displayText == "3", "Swift 已有对象属性")
 check(evaluate("scanner.privateMessage()").displayText == "\"private\"",
