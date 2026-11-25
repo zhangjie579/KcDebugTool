@@ -96,8 +96,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// 查找圆角的问题
 - (NSMutableArray<NSString *> *)kc_findCornerRadiusQuestion;
 
-/// 检查不可见的原因
+/// 检查自身及祖先的隐藏、透明度、尺寸和裁剪；YES 表示未发现这些导致完全不可见的原因。
 - (BOOL)kc_checkInvisibleQuestion;
+
+/// 从自身向上逐层检查视图是否完整落在直接父视图的 bounds 内。
+/// 越界的视图会显示红色边框；再次检查且已恢复时移除标记。YES 表示各层均未越界。
+- (BOOL)kc_checkOutOfSuperviewBounds;
 
 #pragma mark - hitTest
 

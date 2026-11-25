@@ -12,7 +12,10 @@
 #import "KcAutoLayoutCheck.h"
 #import "UIColor+KcDebugTool.h"
 #import <math.h>
+#import <objc/runtime.h>
 @import KcDebugSwift;
+
+static const void *kc_outOfSuperviewBorderKey = &kc_outOfSuperviewBorderKey;
 
 @implementation UIView (KcDebugTool)
 
@@ -421,51 +424,75 @@
     return items;
 }
 
-/// 检查不可见的原因
-/*
- 1、自己size不对
- 2、parent size不对
- * parent size过小，clip to bounds = true
- */
 - (BOOL)kc_checkInvisibleQuestion {
-    
-    UIView *currentView = self;
-    
-    while (currentView) {
-        if (currentView.hidden) {
-            [KcLogParamModel logWithKey:@"❌不能显示" format:@"isHidden == true, %@", currentView];
-            return false;
-        }
-        
-        if (currentView.alpha < 0.01) {
-            [KcLogParamModel logWithKey:@"❌不能显示" format:@"self.alpha < 0.01, %@", currentView];
-            return false;
-        }
-        
-        if (currentView.frame.size.width <= 0 || currentView.frame.size.height <= 0) {
-            [KcLogParamModel logWithKey:@"❌不能显示" format:@"size <= 0, %@", currentView];
-            return false;
-        }
-        
-        UIView *superview = currentView.superview;
-        if (superview) {
-            if (superview.frame.size.width <= 0 || superview.frame.size.height <= 0) {
-                [KcLogParamModel logWithKey:@"❌不能显示" format:@"在superview: %@的size <= 0", superview];
-                return false;
-            }
-            
-            BOOL isContains = CGRectContainsPoint(superview.bounds, currentView.center);
-            
-            if (!isContains) {
-                [KcLogParamModel logWithKey:@"❌不能显示" format:@"在superview: %@的外面, clipsToBounds: %d", superview, superview.clipsToBounds];
-                return false;
-            }
-        }
-        
-        currentView = superview;
+    if (![NSThread isMainThread]) {
+        [KcLogParamModel logWithKey:@"⚠️显示检查" format:@"请在主线程调用 kc_checkInvisibleQuestion"];
+        return NO;
     }
-    
-    return true;
+    if (!self.window && ![self.window isKindOfClass:UIWindow.class]) {
+        [KcLogParamModel logWithKey:@"❌不能显示" format:@"视图未加入 UIWindow: %@", self];
+        return NO;
+    }
+
+    CGFloat effectiveAlpha = 1;
+    CGRect visibleRect = self.bounds;
+    for (UIView *view = self; view; view = view.superview) {
+        if (view.hidden) {
+            [KcLogParamModel logWithKey:@"❌不能显示" format:@"hidden == YES: %@", view];
+            return NO;
+        }
+        effectiveAlpha *= view.alpha;
+        if (effectiveAlpha <= 0.01) {
+            [KcLogParamModel logWithKey:@"❌不能显示" format:@"累计 alpha <= 0.01: %@", view];
+            return NO;
+        }
+        if (CGRectIsEmpty(visibleRect)) {
+            [KcLogParamModel logWithKey:@"❌不能显示" format:@"可见区域为空: %@", view];
+            return NO;
+        }
+        UIView *parent = view.superview;
+        if (parent) {
+            visibleRect = [view convertRect:visibleRect toView:parent];
+            if (parent.clipsToBounds) {
+                visibleRect = CGRectIntersection(visibleRect, parent.bounds);
+            }
+            if (CGRectIsEmpty(visibleRect)) {
+                [KcLogParamModel logWithKey:@"❌不能显示" format:@"目标完全位于裁剪视图之外: %@", parent];
+                return NO;
+            }
+        }
+    }
+    return YES;
+}
+
+- (BOOL)kc_checkOutOfSuperviewBounds {
+    if (![NSThread isMainThread]) {
+        [KcLogParamModel logWithKey:@"⚠️尺寸检查" format:@"请在主线程调用 kc_checkOutOfSuperviewBounds"];
+        return NO;
+    }
+
+    BOOL allContained = YES;
+    for (UIView *view = self; view.superview; view = view.superview) {
+        UIView *parent = view.superview;
+        CGRect rectInParent = [view convertRect:view.bounds toView:parent];
+        BOOL contained = CGRectContainsRect(parent.bounds, rectInParent);
+        CALayer *border = objc_getAssociatedObject(view, kc_outOfSuperviewBorderKey);
+        if (!contained) {
+            allContained = NO;
+            if (!border) {
+                border = [CALayer layer];
+                border.borderColor = UIColor.redColor.CGColor;
+                border.borderWidth = 2;
+                objc_setAssociatedObject(view, kc_outOfSuperviewBorderKey, border, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            border.frame = view.bounds;
+            [view.layer addSublayer:border];
+            [KcLogParamModel logWithKey:@"❌超出父视图" format:@"view: %@, 在父视图中的范围: %@, parent: %@, bounds: %@", view, NSStringFromCGRect(rectInParent), parent, NSStringFromCGRect(parent.bounds)];
+        } else if (border) {
+            [border removeFromSuperlayer];
+        }
+    }
+    return allContained;
 }
 
 #pragma mark - HitTest
