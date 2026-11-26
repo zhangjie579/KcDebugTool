@@ -583,6 +583,8 @@ final class MemoryGraphScanner {
 
     /// 地址 -> objects 下标
     private var objectIndexByAddress: [UInt: Int] = [:]
+    /// 类对象地址 -> 运行时名称，供离线 HTML 按类地址查询（包含零实例的已注册类）
+    private var registeredClassNamesByAddress: [UInt: String] = [:]
     /// 未注册的 Swift 泛型类只读描述符名称；绝不交给 ObjC 的类名/继承 API。
     private var unregisteredSwiftClassNames: [UInt: String] = [:]
     /// 非对象容器块地址 -> 块大小（透传扫描用）
@@ -617,9 +619,9 @@ final class MemoryGraphScanner {
     private var scanLayouts: [UInt: [Int: [(offset: Int, ownerOffset: Int)]]] = [:]
     /// 容器块地址 -> 持有者（incoming 反查扫描时建立）。必须透传字段 ownership，
     /// 否则 unknown 字段经容器后会被默认误标为 strong。
-    private var containerOwnerByAddress: [UInt: (owner: UInt,
-                                                 ivarName: String?,
-                                                 ownership: ReferenceOwnership)] = [:]
+    private var containerOwnerByAddress: [UInt: [(owner: UInt,
+                                                  ivarName: String?,
+                                                  ownership: ReferenceOwnership)]] = [:]
     /// 容器块地址 -> 展示标签：incoming 反查中「无持有者容器」（如仅被 GCD 持有的
     /// block / Swift 闭包上下文）捕获对象时，以容器自身作为伪来源展示
     private var containerLabelByAddress: [UInt: String] = [:]
@@ -627,6 +629,8 @@ final class MemoryGraphScanner {
     private var blockClassCache: [UInt: Bool] = [:]
     /// 被类名前缀过滤、作为容器透传的 ObjC block 地址
     private var blockContainerAddresses = Set<UInt>()
+    /// 无堆对象持有者、但自身是 block / Swift 闭包上下文的候选块；首次反查时建立。
+    private var orphanCaptureContainerAddresses: [UInt]?
     /// 代码地址 -> 精简后的符号名；未命中的地址单独缓存，避免全堆反查反复 dladdr
     private var closureSymbolByAddress: [UInt: String] = [:]
     private var unresolvedClosureSymbolAddresses = Set<UInt>()
@@ -636,6 +640,10 @@ final class MemoryGraphScanner {
     private var staticStorageImageCount: UInt32 = 0
     private var staticRootLabelByAddress: [UInt: String] = [:]
     private var staticIncomingByTarget: [UInt: [ReferenceEdge]]?
+    private(set) var cycleSearchTruncated = false
+    private(set) var cycleSearchVisitedObjects = 0
+    private(set) var inspectedHeapBlockCount = 0
+    private(set) var identifyDuration: TimeInterval = 0
     /// 反射 SPI 只用于 App bundle 内静态 Swift metadata 的字段名、类型和偏移；
     /// 主程序、内嵌 framework / Pod 与 debug dylib 都要覆盖，系统镜像和堆上动态类不调用。
     private let appBundlePath = Bundle.main.bundlePath
@@ -656,6 +664,92 @@ final class MemoryGraphScanner {
         let edges: [ReferenceEdge]
         /// 链上节点地址 -> 类名（含 block 标记）
         let classNameByAddress: [UInt: String]
+    }
+
+    struct ClassInfo {
+        let address: UInt
+        let name: String
+        let instanceAddresses: [UInt]
+    }
+
+    /// 类查询快速路径：只枚举类表与 malloc 块首字，不建立对象图和容器索引。
+    /// 未匹配时返回空数组；完整扫描未注册 Swift 泛型类由用户显式触发。
+    func quickClassInfos(matching query: String) -> [ClassInfo] {
+        let startedAt = Date()
+        let token = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !token.isEmpty else { return [] }
+        let names = loadRegisteredClassNames()
+        let exact = names.filter { _, name in
+            let full = name.lowercased()
+            return full == token || full.hasSuffix("." + token)
+        }
+        let matches = exact.isEmpty
+            ? names.filter { $0.value.lowercased().contains(token) } : exact
+        guard !matches.isEmpty else {
+            identifyDuration = Date().timeIntervalSince(startedAt)
+            return []
+        }
+        let result = quickClassInfos(for: matches)
+        identifyDuration = Date().timeIntervalSince(startedAt)
+        return result
+    }
+
+    func quickClassInfo(at address: UInt) -> ClassInfo? {
+        let startedAt = Date()
+        let names = loadRegisteredClassNames()
+        guard let name = names[address] else {
+            identifyDuration = Date().timeIntervalSince(startedAt)
+            return nil
+        }
+        let result = quickClassInfos(for: [address: name]).first
+        identifyDuration = Date().timeIntervalSince(startedAt)
+        return result
+    }
+
+    private func quickClassInfos(for names: [UInt: String]) -> [ClassInfo] {
+        let ranges = enumerateHeapBlockRanges()
+        inspectedHeapBlockCount = ranges.count
+        var instances: [UInt: [UInt]] = [:]
+        for range in ranges where range.count >= MemoryLayout<UInt>.size {
+            guard let base = UnsafeRawPointer(bitPattern: range.lowerBound) else { continue }
+            let isaWord = base.load(as: UInt.self)
+            guard isaWord != 0, isaWord & taggedPointerMask == 0 else { continue }
+            let classAddress = isaWord & isaClassMask
+            if names[classAddress] != nil {
+                instances[classAddress, default: []].append(range.lowerBound)
+            }
+        }
+        return names.map { address, name in
+            ClassInfo(address: address, name: name, instanceAddresses: instances[address] ?? [])
+        }.sorted { $0.instanceAddresses.count > $1.instanceAddresses.count }
+    }
+
+    /// 返回已注册类（含零实例）及扫描到的未注册 Swift 泛型类。
+    func classInfos(matching query: String) -> [ClassInfo] {
+        var names = registeredClassNamesByAddress
+        var instances: [UInt: [UInt]] = [:]
+        for object in objects {
+            names[object.classPointer] = object.className
+            instances[object.classPointer, default: []].append(object.address)
+        }
+        let token = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = names.map { address, name in
+            ClassInfo(address: address, name: name, instanceAddresses: instances[address] ?? [])
+        }
+        guard !token.isEmpty else { return [] }
+        let exact = all.filter {
+            let full = $0.name.lowercased()
+            return full == token || full.hasSuffix("." + token)
+        }
+        return (exact.isEmpty ? all.filter { $0.name.lowercased().contains(token) } : exact)
+            .sorted { $0.instanceAddresses.count > $1.instanceAddresses.count }
+    }
+
+    func classInfo(at address: UInt) -> ClassInfo? {
+        let instances = objects.filter { $0.classPointer == address }
+        guard let name = registeredClassNamesByAddress[address] ?? instances.first?.className else { return nil }
+        return ClassInfo(address: address, name: name,
+                         instanceAddresses: instances.map(\.address))
     }
 
     /// 单对象引用关系报告
@@ -682,13 +776,24 @@ final class MemoryGraphScanner {
         let notificationRetentions: [ReferenceEdge]
         /// 经过该对象的循环引用链（定向 DFS 找出，最多 50 条）
         let cycles: [CycleChain]
+        let scanDuration: TimeInterval
+        let scannedObjectCount: Int
+        let incomingSweepCount: Int
+        let cycleSearchVisitedObjects: Int
+        let cycleSearchTruncated: Bool
+        let unconfirmedEdgeCount: Int
+        let identifyDuration: TimeInterval
     }
 
     /// 快速识别堆上对象：仅堆枚举 + isa 解码 + 前缀过滤，秒级完成。
     /// 之后可用 referenceReport(of:) 按需查询单对象引用关系
     @discardableResult
     func identifyObjects() -> [HeapObject] {
-        buildNodes(blockRanges: enumerateHeapBlockRanges())
+        let startedAt = Date()
+        let ranges = enumerateHeapBlockRanges()
+        inspectedHeapBlockCount = ranges.count
+        buildNodes(blockRanges: ranges)
+        identifyDuration = Date().timeIntervalSince(startedAt)
         return objects
     }
 
@@ -696,7 +801,9 @@ final class MemoryGraphScanner {
     /// outgoing 直接解析对象内存（廉价）；incoming 逐层反查，
     /// 每层一次全堆定向扫描（对象 ivar + 容器元素），maxDepth 层即 maxDepth 次扫描。
     /// - Parameter address: 对象堆地址（HeapObject.address / ObjectIdentifier.rawValue）
-    func referenceReport(of address: UInt, maxDepth: Int = 1) -> ReferenceReport? {
+    func referenceReport(of address: UInt, maxDepth: Int = 1,
+                         cycleMaxDepth: Int = 10, cycleMaxObjects: Int = 2_400) -> ReferenceReport? {
+        let startedAt = Date()
         guard let index = objectIndexByAddress[address] else { return nil }
         let target = objects[index]
         let references = directReferences(from: target)
@@ -707,7 +814,9 @@ final class MemoryGraphScanner {
         var seenIncomingEdges = Set<String>()
         var visitedStrongSources: Set<UInt> = [address]
         var currentTargets: Set<UInt> = [address]
+        var sweepCount = 0
         for level in 1...max(1, maxDepth) {
+            sweepCount += 1
             let levelEdges = incomingSweep(targets: currentTargets)
             for edge in levelEdges where seenIncomingEdges.insert(Self.edgeKey(edge)).inserted {
                 allIncoming.append(edge)
@@ -744,7 +853,8 @@ final class MemoryGraphScanner {
             // unconfirmedStrong 按默认 strong 参与找环，不属于「非强字段」
             if let name = fieldName(at: offset, in: targetNameMap) { nonStrongFields[name] = ownership }
         }
-        let cycles = cycleChains(through: address, directIncoming: allIncoming)
+        let cycles = cycleChains(through: address, directIncoming: allIncoming,
+                                 maxDepth: cycleMaxDepth, maxObjects: cycleMaxObjects)
         for cycle in cycles {
             classNameByAddress.merge(cycle.classNameByAddress) { current, _ in current }
         }
@@ -766,7 +876,16 @@ final class MemoryGraphScanner {
                                incomingLevel: incomingLevel,
                                classNameByAddress: classNameByAddress,
                                notificationRetentions: notificationRetentions,
-                               cycles: cycles)
+                               cycles: cycles,
+                               scanDuration: Date().timeIntervalSince(startedAt),
+                               scannedObjectCount: objects.count,
+                               incomingSweepCount: sweepCount,
+                               cycleSearchVisitedObjects: cycleSearchVisitedObjects,
+                               cycleSearchTruncated: cycleSearchTruncated,
+                               unconfirmedEdgeCount: (outgoing + allIncoming).filter {
+                                   $0.ownership == .unconfirmedStrong || $0.ownership == .unknown
+                               }.count,
+                               identifyDuration: identifyDuration)
     }
 
     /// 定向查找经过 address 的循环引用链：沿强引用边 DFS，只保留能回到目标的闭合路径。
@@ -784,11 +903,14 @@ final class MemoryGraphScanner {
                      maxChains: Int = 50,
                      maxObjects: Int = 2_400) -> [CycleChain] {
         guard let targetIndex = objectIndexByAddress[address] else { return [] }
+        cycleSearchTruncated = false
+        cycleSearchVisitedObjects = 0
         let collectLimit = maxChains * 4
         let shortChainLimit = 100
         var chains: [CycleChain] = []
         var seenChains = Set<String>()
         var visitedCount = 0
+        var hitSearchLimit = false
         var path: [ReferenceEdge] = []
         var onPath: Set<UInt> = [address]
 
@@ -902,9 +1024,11 @@ final class MemoryGraphScanner {
 
         func visit(_ current: UInt, _ depth: Int, _ branchLimit: Int,
                    _ branchVisited: inout Int) {
+            if visitedCount >= maxObjects || branchVisited >= branchLimit || depth > maxDepth {
+                hitSearchLimit = true
+                return
+            }
             guard chains.count - precollectedCount < collectLimit,
-                  visitedCount < maxObjects, branchVisited < branchLimit,
-                  depth <= maxDepth,
                   objectIndexByAddress[current] != nil else { return }
             if let suffixes = returnSuffixes[current] {
                 for suffix in suffixes where path.count + suffix.count <= maxDepth {
@@ -923,6 +1047,9 @@ final class MemoryGraphScanner {
             visitedCount += 1
             branchVisited += 1
             let nextEdges = prioritizedReferences(from: current)
+            if depth >= maxDepth && nextEdges.contains(where: { $0.to != address }) {
+                hitSearchLimit = true
+            }
             // 先收完本层所有直接回到目标的边（闭合即最短链），再展开其他分支，
             // 避免深搜先占满额度把短环挤掉。
             for edge in nextEdges where edge.to == address {
@@ -942,7 +1069,10 @@ final class MemoryGraphScanner {
         }
         for edge in firstEdgesForSearch {
             guard visitedCount < maxObjects,
-                  chains.count - precollectedCount < collectLimit else { break }
+                  chains.count - precollectedCount < collectLimit else {
+                hitSearchLimit = true
+                break
+            }
             if edge.to == address { continue } // 已由短环和直接闭合边收集
             guard objectIndexByAddress[edge.to] != nil else { continue }
             var branchVisited = 0
@@ -955,6 +1085,9 @@ final class MemoryGraphScanner {
             path.removeLast()
             onPath.remove(edge.to)
         }
+        cycleSearchVisitedObjects = visitedCount
+        cycleSearchTruncated = hitSearchLimit || visitedCount >= maxObjects
+            || chains.count - precollectedCount >= collectLimit
         let shortChains = chains.filter { $0.edges.count <= 2 }
             .sorted { $0.edges.count < $1.edges.count }
             .prefix(shortChainLimit)
@@ -1161,6 +1294,7 @@ final class MemoryGraphScanner {
     private func incomingSweep(targets: Set<UInt>) -> [ReferenceEdge] {
         var result: [ReferenceEdge] = []
         var seen = Set<String>()
+        containerOwnerByAddress.removeAll(keepingCapacity: true)
         for object in objects {
             guard let base = UnsafeRawPointer(bitPattern: object.address) else { continue }
             let usableSize = min(Int(malloc_size(base)), object.size)
@@ -1187,50 +1321,61 @@ final class MemoryGraphScanner {
                                              ownership: edgeOwnership),
                                seen: &seen, into: &result)
                 } else if edgeOwnership.isStrongEdge,
-                          containerSizeByAddress[word] != nil,
-                          containerOwnerByAddress[word] == nil {
+                          containerSizeByAddress[word] != nil {
                     let referenceLabel = referenceLabel(for: object, at: offset, base: base, nameMap: nameMap)
                     updateClosureContainerLabel(at: word, ownerLabel: referenceLabel,
                                                 classPointer: object.classPointer, offset: offset)
-                    containerOwnerByAddress[word] = (object.address, referenceLabel, edgeOwnership)
+                    var owners = containerOwnerByAddress[word, default: []]
+                    if !owners.contains(where: {
+                        $0.owner == object.address && $0.ivarName == referenceLabel && $0.ownership == edgeOwnership
+                    }) {
+                        owners.append((object.address, referenceLabel, edgeOwnership))
+                        containerOwnerByAddress[word] = owners
+                    }
                 }
             }
         }
-        for (containerAddress, _) in containerSizeByAddress {
-            if let owner = containerOwnerByAddress[containerAddress] {
+        for (containerAddress, owners) in containerOwnerByAddress {
+            for owner in owners {
                 sweepContainer(from: owner.owner,
                                ivarName: owner.ivarName,
                                containerAddress: containerAddress,
                                targets: targets,
                                ownership: owner.ownership,
                                seen: &seen, into: &result)
-            } else {
-                // 无持有者：仅被 GCD / timer 等系统设施持有的 block / Swift 闭包上下文，
-                // 以容器自身地址作为伪来源报告「闭包捕获了目标」。
-                // 噪音过滤（实测 GCD arena 等大型 OS 内部块会产生大量垃圾边）：
-                // 闭包上下文 / block 都是小块（≤ 4KB），首字是静态元数据指针
-                // （block 类 isa / Swift 闭包元数据位于二进制或 shared cache，
-                // 不归属 malloc zone）；大型块与首字指向堆内的块一律跳过。
-                // 代价：元数据在堆上的泛型闭包上下文会被漏掉
-                guard let base = UnsafeRawPointer(bitPattern: containerAddress),
-                      (containerSizeByAddress[containerAddress] ?? 0) <= 4096 else { continue }
-                let meta = base.load(as: UInt.self)
-                guard meta & 1 == 0, meta & 7 == 0,
-                      let metaPointer = UnsafeRawPointer(bitPattern: meta),
-                      malloc_zone_from_ptr(metaPointer) == nil else { continue }
-                let captureLabel = blockContainerAddresses.contains(containerAddress)
-                    ? "block 捕获（\(containerLabelByAddress[containerAddress] ?? "未知 block")）"
-                    : "Swift 匿名闭包捕获（无可用代码指针）"
-                sweepContainer(from: containerAddress,
-                               ivarName: captureLabel,
-                               containerAddress: containerAddress,
-                               targets: targets,
-                               ownership: .unknown,
-                               seen: &seen, into: &result)
             }
+        }
+        // 无对象持有者的闭包只需在首次反查时分类一次；普通数组/字典缓冲区
+        // 不可能凭空成为捕获源，不再每层逐字扫描所有匿名 malloc 块。
+        for containerAddress in orphanCaptureCandidates()
+        where containerOwnerByAddress[containerAddress] == nil {
+            let captureLabel = blockContainerAddresses.contains(containerAddress)
+                ? "block 捕获（\(containerLabelByAddress[containerAddress] ?? "未知 block")）"
+                : "Swift 匿名闭包捕获（无可用代码指针）"
+            sweepContainer(from: containerAddress,
+                           ivarName: captureLabel,
+                           containerAddress: containerAddress,
+                           targets: targets,
+                           ownership: .unknown,
+                           seen: &seen, into: &result)
         }
         staticIncoming(targets: targets, seen: &seen, into: &result)
         return result
+    }
+
+    private func orphanCaptureCandidates() -> [UInt] {
+        if let cached = orphanCaptureContainerAddresses { return cached }
+        var candidates: [UInt] = []
+        for (address, size) in containerSizeByAddress where size <= 4096 {
+            if blockContainerAddresses.contains(address) {
+                candidates.append(address)
+            } else if let base = UnsafeRawPointer(bitPattern: address),
+                      containerContext(base) == .closure {
+                candidates.append(address)
+            }
+        }
+        orphanCaptureContainerAddresses = candidates
+        return candidates
     }
 
     /// 反查方向的容器扫描：命中 targets 中任一地址即建边（from = source）。
@@ -1396,16 +1541,33 @@ final class MemoryGraphScanner {
 
     // MARK: 节点识别
 
-    private func buildNodes(blockRanges: [Range<UInt>]) {
-        // 已注册 ObjC 类指针集合：isa 解码结果不在此集合中的堆块不是有效对象
+    private func loadRegisteredClassNames() -> [UInt: String] {
         var classCount: UInt32 = 0
-        guard let classList = objc_copyClassList(&classCount) else { return }
-        // 注意：这里不能通过 AutoreleasingUnsafeMutablePointer<AnyClass> 的下标读取，
-        // 该访问路径会触发 ObjC 消息转发导致崩溃；按裸内存逐字读类指针即可
-        let classListBase = UnsafeRawPointer(classList)
-        var registeredClasses = Set<UInt>(minimumCapacity: Int(classCount))
+        guard let classList = objc_copyClassList(&classCount) else { return [:] }
+        defer { free(UnsafeMutableRawPointer(mutating: UnsafeRawPointer(classList))) }
+        let base = UnsafeRawPointer(classList)
+        var names: [UInt: String] = [:]
+        names.reserveCapacity(Int(classCount))
         for index in 0..<Int(classCount) {
-            registeredClasses.insert(classListBase.load(fromByteOffset: index * 8, as: UInt.self))
+            let address = base.load(fromByteOffset: index * MemoryLayout<UInt>.size, as: UInt.self)
+            let runtimeClass: AnyClass = unsafeBitCast(address, to: AnyClass.self)
+            names[address] = demangleClassNameIfNeeded(String(cString: class_getName(runtimeClass)))
+        }
+        return names
+    }
+
+    private func buildNodes(blockRanges: [Range<UInt>]) {
+        orphanCaptureContainerAddresses = nil
+        // 类名按类地址缓存一次；大型堆里同类可有数十万实例，逐对象 class_getName 很慢。
+        let registeredNames = loadRegisteredClassNames()
+        let registeredClasses = Set(registeredNames.keys)
+        for (address, name) in registeredNames {
+            let bareName = name.split(separator: ".").last.map(String.init) ?? name
+            if classPrefixes.isEmpty || classPrefixes.contains(where: {
+                bareName.hasPrefix($0) || name.hasPrefix($0)
+            }) {
+                registeredClassNamesByAddress[address] = name
+            }
         }
         var unrealizedClassNames: [UInt: String] = [:]
         var rejectedClassPointers = Set<UInt>()
@@ -1448,8 +1610,7 @@ final class MemoryGraphScanner {
                 unregisteredSwiftClassNames[classPointer] = rawSwiftName
                 className = rawSwiftName
             } else {
-                let anyClass: AnyClass = unsafeBitCast(classPointer, to: AnyClass.self)
-                className = demangleClassNameIfNeeded(String(cString: class_getName(anyClass)))
+                className = registeredNames[classPointer] ?? "?"
             }
             let bareClassName = className.split(separator: ".").last.map(String.init) ?? className
             if classPrefixes.isEmpty || classPrefixes.contains(where: { bareClassName.hasPrefix($0) || className.hasPrefix($0) }) {
@@ -2362,6 +2523,7 @@ final class MemoryGraphScanner {
     func exportJSONData() throws -> Data {
         struct NodeJSON: Codable {
             var address: String
+            var classAddress: String
             var className: String
             var size: Int
             var inDegree: Int
@@ -2379,10 +2541,16 @@ final class MemoryGraphScanner {
             /// strong / weak / unowned / unownedUnsafe / nonStrong / unknown
             var ownership: String
         }
+        struct ClassJSON: Codable {
+            var address: String
+            var name: String
+            var instanceCount: Int
+        }
         struct GraphJSON: Codable {
             var generatedAt: String
             var classFilter: String
             var nodeCount: Int
+            var classes: [ClassJSON]
             var nodes: [NodeJSON]
             var edges: [EdgeJSON]
             /// 非强引用边（weak / unowned / nonStrong），不参与强引用图与找环
@@ -2397,19 +2565,32 @@ final class MemoryGraphScanner {
                      ownership: edge.ownership.rawValue)
         }
         let cycleAddresses = Set(cycles.flatMap { $0 })
+        var inDegrees: [UInt: Int] = [:]
+        for edge in edges { inDegrees[edge.to, default: 0] += 1 }
+        var instanceCounts: [UInt: Int] = [:]
+        var classNames = registeredClassNamesByAddress
+        for object in objects {
+            instanceCounts[object.classPointer, default: 0] += 1
+            classNames[object.classPointer] = object.className
+        }
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let graph = GraphJSON(
             generatedAt: dateFormatter.string(from: Date()),
             classFilter: classPrefixes.joined(separator: ","),
             nodeCount: objects.count,
+            classes: classNames.map { address, name in
+                ClassJSON(address: Self.hex(address), name: name,
+                          instanceCount: instanceCounts[address] ?? 0)
+            }.sorted { $0.instanceCount > $1.instanceCount },
             nodes: objects
-                .sorted { self.inDegree(of: $0.address) > self.inDegree(of: $1.address) }
+                .sorted { (inDegrees[$0.address] ?? 0) > (inDegrees[$1.address] ?? 0) }
                 .map {
                     NodeJSON(address: Self.hex($0.address),
+                             classAddress: Self.hex($0.classPointer),
                              className: $0.className,
                              size: $0.size,
-                             inDegree: self.inDegree(of: $0.address),
+                             inDegree: inDegrees[$0.address] ?? 0,
                              inCycle: cycleAddresses.contains($0.address),
                              isBlock: $0.isBlock,
                              weaklyReferenced: $0.weaklyReferenced)

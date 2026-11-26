@@ -53,6 +53,17 @@
   aside .badge.weak {
     background: rgba(230, 160, 40, .15); color: var(--warn, #e6a028);
   }
+  #lookupResults { border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px; }
+  #lookupResults:empty { display: none; }
+  #lookupResults h2 { color: var(--accent); }
+  #lookupResults p { color: var(--muted); margin: 6px 0; }
+  .lookup-row { display: block; width: 100%; text-align: left; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 8px; margin-top: 5px; cursor: pointer; word-break: break-all; }
+  .lookup-row:hover { border-color: var(--accent); }
+  .lookup-row small { color: var(--muted); display: block; }
+  .cycle-path { margin-top: 6px; padding: 8px; background: var(--bg); border-radius: 6px;
+    color: var(--cycle); word-break: break-all; }
   aside section { margin-top: 16px; }
   aside section h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
   .ref-item {
@@ -84,8 +95,11 @@
 <header>
   <h1>Memory Graph 内存图</h1>
   <span class="stats" id="stats"></span>
+  <input type="text" id="lookup" placeholder="对象地址 / 类地址 / 类名…" aria-label="查询对象地址、类地址或类名">
+  <button id="lookupButton" type="button">查询</button>
   <input type="text" id="search" placeholder="按类名搜索…">
   <label><input type="checkbox" id="cycleOnly"> 只看循环引用</label>
+  <label><input type="checkbox" id="showNonStrong"> 显示 weak / unowned</label>
   <div class="legend">
     <span><span class="dot normal"></span>对象（大小 = 被引用数）</span>
     <span><span class="dot cycle"></span>循环引用</span>
@@ -98,7 +112,8 @@
     <div id="tip"></div>
   </div>
   <aside id="panel">
-    <div class="placeholder">点击左侧节点查看引用关系</div>
+    <div id="lookupResults"></div>
+    <div id="detailPanel"><div class="placeholder">输入地址或类名查询，或点击图中节点</div></div>
   </aside>
 </main>
 <script>
@@ -109,13 +124,28 @@ const nodeByKey = new Map();       // address -> node
 const outEdges = new Map();        // address -> [edge]
 const inEdges = new Map();         // address -> [edge]
 const cycleSet = new Set();        // 参与循环引用的地址集合
-GRAPH.cycles.forEach(c => c.forEach(a => cycleSet.add(a)));
+const cycleComponent = new Map();
+GRAPH.cycles.forEach((c, index) => c.forEach(a => { cycleSet.add(a); cycleComponent.set(a, index); }));
+function isCycleEdge(e) {
+  return (e.ownership === 'strong' || e.ownership === 'unconfirmedStrong') &&
+    cycleComponent.has(e.from) && cycleComponent.get(e.from) === cycleComponent.get(e.to);
+}
 
 GRAPH.nodes.forEach(n => {
   n.key = n.address;
   nodeByKey.set(n.key, n);
 });
-GRAPH.edges.forEach(e => {
+const classes = GRAPH.classes || [];
+const classByAddress = new Map(classes.map(c => [c.address.toLowerCase(), c]));
+const objectsByClass = new Map();
+GRAPH.nodes.forEach(n => {
+  const classAddress = (n.classAddress || '').toLowerCase();
+  if (!objectsByClass.has(classAddress)) objectsByClass.set(classAddress, []);
+  objectsByClass.get(classAddress).push(n);
+});
+const strongEdges = GRAPH.edges.filter(e => nodeByKey.has(e.from) && nodeByKey.has(e.to));
+const nonStrongEdges = (GRAPH.nonStrongEdges || []).filter(e => nodeByKey.has(e.from) && nodeByKey.has(e.to));
+[...strongEdges, ...nonStrongEdges].forEach(e => {
   if (!nodeByKey.has(e.from) || !nodeByKey.has(e.to)) return;
   if (!outEdges.has(e.from)) outEdges.set(e.from, []);
   if (!inEdges.has(e.to)) inEdges.set(e.to, []);
@@ -154,15 +184,45 @@ GRAPH.nodes.forEach((n, i) => {
   n.vx = 0; n.vy = 0;
 });
 const nodes = GRAPH.nodes;
-const edges = GRAPH.edges.filter(e => nodeByKey.has(e.from) && nodeByKey.has(e.to));
+let showNonStrong = false;
+let visibleKeys = new Set();
+let activeNodes = [];
+let activeEdges = [];
+const layoutLimit = 300;
+function updateVisible() {
+  let candidates = nodes;
+  if (cycleOnly) candidates = candidates.filter(n => cycleSet.has(n.key));
+  if (searchToken) candidates = candidates.filter(n => n.className.toLowerCase().includes(searchToken));
+  if (!cycleOnly && !searchToken && nodes.length > layoutLimit) {
+    candidates = candidates.slice(0, layoutLimit);
+  }
+  if (selected) {
+    const neighborKeys = [...(outEdges.get(selected.key) || []).map(e => e.to),
+      ...(inEdges.get(selected.key) || []).map(e => e.from)];
+    const priority = [selected, ...neighborKeys.map(key => nodeByKey.get(key)).filter(Boolean)];
+    candidates = [...new Set([...priority, ...candidates])];
+  }
+  activeNodes = candidates.slice(0, layoutLimit);
+  activeNodes.forEach((n, i) => {
+    const angle = (i / Math.max(activeNodes.length, 1)) * Math.PI * 2;
+    const radius = 180 + (i % 7) * 40;
+    n.x = Math.cos(angle) * radius;
+    n.y = Math.sin(angle) * radius;
+    n.vx = 0; n.vy = 0;
+  });
+  visibleKeys = new Set(activeNodes.map(n => n.key));
+  activeEdges = (showNonStrong ? [...strongEdges, ...nonStrongEdges] : strongEdges)
+    .filter(e => visibleKeys.has(e.from) && visibleKeys.has(e.to));
+  alpha = 1;
+}
 let alpha = 1;
 
 function step() {
   if (alpha < 0.005) return;
   // 斥力
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j];
+  for (let i = 0; i < activeNodes.length; i++) {
+    for (let j = i + 1; j < activeNodes.length; j++) {
+      const a = activeNodes[i], b = activeNodes[j];
       let dx = b.x - a.x, dy = b.y - a.y;
       let dist2 = dx * dx + dy * dy;
       if (dist2 < 1) { dx = Math.random() - .5; dy = Math.random() - .5; dist2 = 1; }
@@ -173,7 +233,7 @@ function step() {
     }
   }
   // 弹簧
-  edges.forEach(e => {
+  activeEdges.forEach(e => {
     const a = nodeByKey.get(e.from), b = nodeByKey.get(e.to);
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -183,7 +243,7 @@ function step() {
     a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
   });
   // 向心 + 积分
-  nodes.forEach(n => {
+  activeNodes.forEach(n => {
     n.vx += -n.x * 0.008; n.vy += -n.y * 0.008;
     n.vx *= 0.85; n.vy *= 0.85;
     if (!n.dragging) { n.x += n.vx * alpha * 3; n.y += n.vy * alpha * 3; }
@@ -195,6 +255,7 @@ function step() {
 let selected = null, hovered = null;
 let cycleOnly = false;
 let searchToken = '';
+updateVisible();
 
 function nodeMatches(n) {
   if (cycleOnly && !cycleSet.has(n.key)) return false;
@@ -222,14 +283,17 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
   // 边（箭头指向被引用方）
-  edges.forEach(e => {
+  activeEdges.forEach(e => {
     const a = nodeByKey.get(e.from), b = nodeByKey.get(e.to);
     if (!a || !b) return;
     const highlight = selected && (e.from === selected.key || e.to === selected.key);
     const dim = (cycleOnly || searchToken) && !(nodeMatches(a) && nodeMatches(b));
-    const inCycle = cycleSet.has(e.from) && cycleSet.has(e.to);
-    ctx.strokeStyle = highlight ? '#e8edf5' : (inCycle ? 'rgba(240,85,79,.75)' : (dim ? 'rgba(61,67,79,.25)' : 'rgba(61,67,79,.9)'));
+    const inCycle = isCycleEdge(e);
+    ctx.strokeStyle = highlight ? '#e8edf5' : (inCycle ? 'rgba(240,85,79,.75)' :
+      (e.ownership === 'weak' || e.ownership === 'unowned' || e.ownership === 'nonStrong' ? '#b26a00' :
+      (dim ? 'rgba(61,67,79,.25)' : 'rgba(61,67,79,.9)')));
     ctx.lineWidth = highlight ? 2 : 1.2;
+    ctx.setLineDash(e.ownership === 'strong' ? [] : [5, 4]);
 
     const [sx, sy] = worldToScreen(a.x, a.y);
     const [tx, ty] = worldToScreen(b.x, b.y);
@@ -255,9 +319,10 @@ function draw() {
       ctx.fillText(e.ivar, (sx + ex) / 2 + 6, (sy + ey) / 2 - 4);
     }
   });
+  ctx.setLineDash([]);
 
   // 节点
-  nodes.forEach(n => {
+  activeNodes.forEach(n => {
     const [x, y] = worldToScreen(n.x, n.y);
     if (x < -60 || y < -60 || x > canvas.width / dpr + 60 || y > canvas.height / dpr + 60) return;
     const r = nodeRadius(n);
@@ -292,12 +357,31 @@ function tick() {
 }
 
 // ---------- 面板 ----------
-const panel = document.getElementById('panel');
+const panel = document.getElementById('detailPanel');
+const lookupResults = document.getElementById('lookupResults');
+function cyclePathFor(address) {
+  const component = cycleComponent.get(address);
+  if (component === undefined) return [];
+  const inComponent = e => isCycleEdge(e) && cycleComponent.get(e.from) === component;
+  const queue = (outEdges.get(address) || []).filter(inComponent).map(e => [e]);
+  const visited = new Set();
+  while (queue.length && visited.size < 1500) {
+    const path = queue.shift();
+    const last = path[path.length - 1].to;
+    if (last === address) return path;
+    if (visited.has(last)) continue;
+    visited.add(last);
+    for (const edge of (outEdges.get(last) || []).filter(inComponent)) {
+      if (!visited.has(edge.to) || edge.to === address) queue.push([...path, edge]);
+    }
+  }
+  return [];
+}
 function refItem(edge, direction) {
   const otherAddress = direction === 'out' ? edge.to : edge.from;
   const other = nodeByKey.get(otherAddress);
   if (!other) return '';
-  const cycleEdge = cycleSet.has(edge.from) && cycleSet.has(edge.to);
+  const cycleEdge = isCycleEdge(edge);
   const ivar = edge.ivar ? `<span class="ivar">${escapeHtml(edge.ivar)}${edge.indirect ? '（容器）' : ''}</span>` : '';
   const ownership = edge.ownership || 'strong';
   const ownershipLabel = {strong:'strong', weak:'weak', unowned:'unowned', unownedUnsafe:'unowned(unsafe)',
@@ -313,20 +397,74 @@ function showPanel(n) {
   const outs = outEdges.get(n.key) || [];
   const ins = inEdges.get(n.key) || [];
   const inCycle = cycleSet.has(n.key);
+  const cyclePath = cyclePathFor(n.key);
+  const cycleHTML = cyclePath.length ? `<section><h3>经过该对象的一条循环引用链</h3><div class="cycle-path">${cyclePath.map(e =>
+    `${escapeHtml(nodeByKey.get(e.from)?.className || e.from)} —${escapeHtml(e.ivar || '?')}→ `).join('')}${escapeHtml(n.className)}</div></section>` : '';
   panel.innerHTML = `
     <h2>${escapeHtml(n.className)}</h2>
-    <div class="addr">${escapeHtml(n.address)} · ${n.size} bytes · 被引用 ${n.inDegree} 次${n.weaklyReferenced ? ' · <span style="color:var(--warn,#e6a028)">被 weak 引用过</span>' : ''}</div>
-    ${inCycle ? '<span class="badge">⚠ 参与循环引用（无法释放）</span>' : ''}
+    <div class="addr">对象 ${escapeHtml(n.address)} · 类 ${escapeHtml(n.classAddress || '?')} · ${n.size} bytes · 被引用 ${n.inDegree} 次${n.weaklyReferenced ? ' · <span style="color:var(--warn,#e6a028)">被 weak 引用过</span>' : ''}</div>
+    ${inCycle ? '<span class="badge">⚠ 参与强引用环（需结合退出后存活情况判断）</span>' : ''}
     ${n.weaklyReferenced ? '<span class="badge weak">被 weak 引用过（对象级标记，不指向具体入边；闭包/block 捕获强弱无法区分）</span>' : ''}
-    <section><h3>被谁引用（${ins.length}）</h3>${ins.map(e => refItem(e, 'in')).join('') || '<div class="addr">无 —— 可能是泄漏根</div>'}</section>
+    ${cycleHTML}
+    <section><h3>被谁引用（${ins.length}）</h3>${ins.map(e => refItem(e, 'in')).join('') || '<div class="addr">当前过滤范围内无已识别入边</div>'}</section>
     <section><h3>引用了谁（${outs.length}）</h3>${outs.map(e => refItem(e, 'out')).join('') || '<div class="addr">无</div>'}</section>`;
   panel.querySelectorAll('.ref-item').forEach(item => {
     item.addEventListener('click', () => selectNode(nodeByKey.get(item.dataset.key)));
   });
 }
 
+function normalizeAddress(value) {
+  const text = value.trim();
+  if (!/^(?:0x)?[0-9a-f]+$/i.test(text) || (!/^0x/i.test(text) && text.length < 6)) return null;
+  const digits = text.replace(/^0x/i, '').replace(/^0+/, '').toLowerCase();
+  return '0x' + (digits || '0');
+}
+
+function showClassInstances(classInfo) {
+  const instances = objectsByClass.get(classInfo.address.toLowerCase()) || [];
+  lookupResults.innerHTML = `<h2>${escapeHtml(classInfo.name)}</h2>
+    <p>类地址 ${escapeHtml(classInfo.address)} · 存活实例 ${instances.length} 个</p>
+    ${instances.map(n => `<button class="lookup-row" type="button" data-object="${escapeHtml(n.address)}">
+      ${escapeHtml(n.address)} <small>${n.size} bytes · ${n.inCycle ? '参与强引用环' : '未标记循环'}</small></button>`).join('') || '<p>当前快照中没有这个类的存活对象。</p>'}`;
+  lookupResults.querySelectorAll('[data-object]').forEach(button => {
+    button.addEventListener('click', () => selectNode(nodeByKey.get(button.dataset.object)));
+  });
+}
+
+function lookup() {
+  const query = document.getElementById('lookup').value.trim();
+  if (!query) { lookupResults.innerHTML = ''; return; }
+  const address = normalizeAddress(query);
+  if (address) {
+    const object = nodeByKey.get(address);
+    if (object) {
+      lookupResults.innerHTML = `<h2>对象地址命中</h2><p>${escapeHtml(object.className)} · ${escapeHtml(address)}</p>`;
+      selectNode(object);
+      return;
+    }
+    const classInfo = classByAddress.get(address);
+    if (classInfo) { showClassInstances(classInfo); return; }
+    lookupResults.innerHTML = '<p>当前快照未识别到该地址。对象可能已释放，或被类名前缀过滤。</p>';
+    return;
+  }
+  const token = query.toLowerCase();
+  let matches = classes.filter(c => c.name.toLowerCase() === token ||
+    c.name.toLowerCase().endsWith('.' + token));
+  if (!matches.length) matches = classes.filter(c => c.name.toLowerCase().includes(token));
+  if (matches.length === 1) { showClassInstances(matches[0]); return; }
+  lookupResults.innerHTML = matches.length
+    ? `<h2>匹配 ${matches.length} 个类</h2>${matches.map(c =>
+      `<button class="lookup-row" type="button" data-class="${escapeHtml(c.address)}">${escapeHtml(c.name)}
+       <small>${escapeHtml(c.address)} · 存活 ${c.instanceCount} 个</small></button>`).join('')}`
+    : '<p>当前快照没有匹配的类。可输入完整类名或省略 Swift 模块前缀。</p>';
+  lookupResults.querySelectorAll('[data-class]').forEach(button => {
+    button.addEventListener('click', () => showClassInstances(classByAddress.get(button.dataset.class.toLowerCase())));
+  });
+}
+
 function selectNode(n) {
   selected = n;
+  updateVisible();
   if (n) {
     // 平移视口让选中节点居中
     const [x, y] = worldToScreen(n.x, n.y);
@@ -339,8 +477,8 @@ function selectNode(n) {
 
 // ---------- 指针拾取 ----------
 function nodeAt(mx, my) {
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const n = nodes[i];
+  for (let i = activeNodes.length - 1; i >= 0; i--) {
+    const n = activeNodes[i];
     const [x, y] = worldToScreen(n.x, n.y);
     const r = nodeRadius(n) + 4;
     if ((mx - x) ** 2 + (my - y) ** 2 <= r * r) return n;
@@ -414,20 +552,30 @@ canvas.addEventListener('wheel', ev => {
 // ---------- 工具栏 ----------
 document.getElementById('search').addEventListener('input', ev => {
   searchToken = ev.target.value.trim().toLowerCase();
+  updateVisible();
 });
 document.getElementById('cycleOnly').addEventListener('change', ev => {
   cycleOnly = ev.target.checked;
+  updateVisible();
+});
+document.getElementById('showNonStrong').addEventListener('change', ev => {
+  showNonStrong = ev.target.checked;
+  updateVisible();
+});
+document.getElementById('lookupButton').addEventListener('click', lookup);
+document.getElementById('lookup').addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') lookup();
 });
 
 // ---------- 初始化 ----------
 document.getElementById('stats').innerHTML =
-  `对象 <b>${GRAPH.nodes.length}</b> · 强引用边 <b>${edges.length}</b> · 循环引用 <b>${GRAPH.cycles.length}</b> 组 · 过滤前缀 <b>${escapeHtml(GRAPH.classFilter)}</b> · 生成于 ${escapeHtml(GRAPH.generatedAt)}`;
+  `对象 <b>${GRAPH.nodes.length}</b> · 强引用边 <b>${strongEdges.length}</b> · 非强边 <b>${nonStrongEdges.length}</b> · 循环引用 <b>${GRAPH.cycles.length}</b> 组 · 画布最多显示 ${layoutLimit} 个节点（可搜索） · 过滤前缀 <b>${escapeHtml(GRAPH.classFilter)}</b> · 生成于 ${escapeHtml(GRAPH.generatedAt)}`;
 
 // 初始视野：包住全部节点
 requestAnimationFrame(() => {
   resize();
-  if (nodes.length) {
-    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  if (activeNodes.length) {
+    const xs = activeNodes.map(n => n.x), ys = activeNodes.map(n => n.y);
     const minX = Math.min(...xs) - 120, maxX = Math.max(...xs) + 120;
     const minY = Math.min(...ys) - 120, maxY = Math.max(...ys) + 120;
     view.scale = Math.min(wrap.clientWidth / (maxX - minX), wrap.clientHeight / (maxY - minY), 1.4);
@@ -437,7 +585,7 @@ requestAnimationFrame(() => {
   // 若有循环引用，默认选中第一个环上的第一个节点，方便直接看到问题
   if (GRAPH.cycles.length) {
     const first = nodeByKey.get(GRAPH.cycles[0][0]);
-    if (first) { selected = first; showPanel(first); }
+    if (first) selectNode(first);
   }
   tick();
 });

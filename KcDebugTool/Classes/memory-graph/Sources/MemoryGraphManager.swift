@@ -7,10 +7,32 @@
 
 import UIKit
 import WebKit
+import Darwin
 
 @objc(MemoryGraphManager)
 @objcMembers
 public class MemoryGraphManager: NSObject {
+    /// 直接打开查询页，不预先扫描。用户在网页输入对象地址、类地址或类名后再查询。
+    /// Objective-C: [MemoryGraphManager openMemoryGraphFrom:self];
+    @objc(openMemoryGraphFrom:)
+    public class func openMemoryGraph(from viewController: UIViewController) {
+        DispatchQueue.main.async { [weak viewController] in
+            guard let viewController = viewController else { return }
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("memory_graph_search_\(UUID().uuidString).html")
+            do {
+                try Data(initialQueryHTML().utf8).write(to: url, options: .atomic)
+                let browser = MGWKWebViewController(localURL: url)
+                viewController.present(UINavigationController(rootViewController: browser), animated: true)
+            } catch {
+                let alert = UIAlertController(title: "查询页打开失败", message: error.localizedDescription,
+                                              preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "好", style: .default))
+                viewController.present(alert, animated: true)
+            }
+        }
+    }
+
     /// 引用关系快速排查：以当前触发入口的页面 VC 为目标，识别堆对象（秒级）后
     /// 反查目标被谁引用、它引用了谁。weak / unowned 单独展示，不参与强引用层级扩展。
     /// 注意：全量内存图（scan() + 模板导出）在大堆上耗时分钟级，排查单对象勿用。
@@ -51,32 +73,252 @@ public class MemoryGraphManager: NSObject {
 
     /// 查询并展示单对象引用报告（后台队列执行，结果页回主线程弹出）
     private class func captureReferenceGraph(address targetAddress: UInt, from viewController: UIViewController) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak viewController] in
             let scanner = MemoryGraphScanner()
             scanner.identifyObjects()
             guard let report = scanner.referenceReport(of: targetAddress, maxDepth: 2) else {
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak viewController] in
                     let alert = UIAlertController(
                         title: "未在堆中找到该对象",
                         message: "可能已正常释放，或地址已失效（0x\(String(targetAddress, radix: 16))）",
                         preferredStyle: .alert)
                     alert.addAction(UIAlertAction(title: "好", style: .default))
-                    viewController.present(alert, animated: true)
+                    viewController?.present(alert, animated: true)
                 }
                 return
             }
             let html = referenceReportHTML(for: report)
             let url = FileManager.default
                 .urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("reference_report.html")
-            try? html.data(using: .utf8)?.write(to: url)
+                .appendingPathComponent("reference_report_\(String(targetAddress, radix: 16))_\(UUID().uuidString).html")
+            do {
+                try Data(html.utf8).write(to: url, options: .atomic)
+            } catch {
+                DispatchQueue.main.async { [weak viewController] in
+                    guard let viewController = viewController else { return }
+                    let alert = UIAlertController(title: "报告保存失败", message: error.localizedDescription,
+                                                  preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "好", style: .default))
+                    viewController.present(alert, animated: true)
+                }
+                return
+            }
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak viewController] in
+                guard let viewController = viewController else { return }
                 let vc = MGWKWebViewController(localURL: url)
                 // 报告页的关闭 / 分享按钮挂在 navigationItem 上，需包一层导航控制器才能显示
                 viewController.present(UINavigationController(rootViewController: vc), animated: true)
             }
         }
+    }
+
+    fileprivate class func lookupMemoryQuery(_ query: String, from controller: MGWKWebViewController) {
+        let requestNumber = controller.beginLookup()
+        DispatchQueue.global(qos: .userInitiated).async { [weak controller] in
+            let scanner = MemoryGraphScanner()
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            let deep = trimmed.hasPrefix("deep:")
+            let term = deep ? String(trimmed.dropFirst(5)) : trimmed
+            let html: String
+            if let address = parseHexAddress(term),
+               term.lowercased().hasPrefix("0x") || term.count >= 6 &&
+               term.range(of: "^[0-9a-fA-F]+$", options: .regularExpression) != nil {
+                let isHeapAddress = UnsafeRawPointer(bitPattern: address).map {
+                    malloc_zone_from_ptr($0) != nil
+                } ?? false
+                if !deep, !isHeapAddress {
+                    let classInfo = scanner.quickClassInfo(at: address)
+                    html = classLookupHTML(classInfo.map { [$0] } ?? [], query: term,
+                                           scanner: scanner, quick: true)
+                } else {
+                    scanner.identifyObjects()
+                    if let report = scanner.referenceReport(of: address,
+                                                            maxDepth: deep ? 2 : 1,
+                                                            cycleMaxDepth: deep ? 10 : 8,
+                                                            cycleMaxObjects: deep ? 2_400 : 400) {
+                        html = referenceReportHTML(for: report, quick: !deep)
+                    } else if let classInfo = scanner.classInfo(at: address) {
+                        html = classLookupHTML([classInfo], query: term, scanner: scanner, quick: false)
+                    } else {
+                        html = classLookupHTML(scanner.classInfos(matching: term), query: term,
+                                               scanner: scanner, quick: false)
+                    }
+                }
+            } else {
+                if !deep {
+                    let classes = scanner.quickClassInfos(matching: term)
+                    html = classLookupHTML(classes, query: term, scanner: scanner, quick: true)
+                } else {
+                    scanner.identifyObjects()
+                    html = classLookupHTML(scanner.classInfos(matching: term), query: term,
+                                           scanner: scanner, quick: false)
+                }
+            }
+            DispatchQueue.main.async { [weak controller] in
+                controller?.showGeneratedHTML(html, requestNumber: requestNumber)
+            }
+        }
+    }
+
+    private class func classLookupHTML(_ classes: [MemoryGraphScanner.ClassInfo],
+                                      query: String, scanner: MemoryGraphScanner, quick: Bool) -> String {
+        let pageSize = 100
+        var addressLists: [String] = []
+        let blocks = classes.enumerated().map { index, info -> String in
+            let addresses = info.instanceAddresses.map(hex)
+            addressLists.append("\(index):[\(addresses.map { "'\($0)'" }.joined(separator: ","))]")
+            let rows = addresses.prefix(pageSize).map { address in
+                "<li><button onclick=\"mgLookupAddress('\(address)')\">\(address)</button></li>"
+            }.joined()
+            let more = addresses.count > pageSize
+                ? "<button id='mgMore_\(index)' onclick='mgMore(\(index))'>再显示 100 个</button>" : ""
+            return "<section><h2>\(escapeHTML(info.name))</h2><p>类地址 \(hex(info.address)) · 存活 \(addresses.count) 个</p><ul id='mgClass_\(index)'>\(rows.isEmpty ? "<li>当前没有存活实例</li>" : rows)</ul>\(more)</section>"
+        }.joined()
+        let content = blocks.isEmpty ? "<p>当前扫描未找到匹配项；地址可能已失效，或该类尚未注册。</p>" : blocks
+        let scanSummary = scanner.inspectedHeapBlockCount == 0
+            ? "已检查运行时类表，无需枚举堆块"
+            : "\(quick ? "快速枚举" : "完整识别") \(scanner.inspectedHeapBlockCount) 个堆块"
+        return """
+        <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{font:14px -apple-system,sans-serif;background:#f2f3f5;padding:16px}section{background:white;border-radius:10px;padding:16px;margin:12px 0}h2{font-size:16px}button,input{font-size:14px;padding:8px}li{margin:8px 0}ul{padding-left:22px}</style></head><body>
+        \(lookupBarHTML(initialValue: query))
+        <section><h1>查询：\(escapeHTML(query))</h1>
+          <p>\(scanSummary)，用时 \(String(format: "%.2f", scanner.identifyDuration)) 秒，匹配 \(classes.count) 个类。\(quick ? "快速模式覆盖已注册类；如需查未注册 Swift 泛型类，可点完整扫描。" : "")</p>
+          \(quick ? "<button onclick=\"mgLookupDeep()\">完整扫描此类</button>" : "")
+        </section>
+        \(content)
+        <script>
+        var mgClassAddresses={\(addressLists.joined(separator: ","))};
+        var mgClassCursor={};
+        function mgMore(index){
+          var addresses=mgClassAddresses[index]||[];
+          var cursor=mgClassCursor[index]||100;
+          var list=document.getElementById('mgClass_'+index);
+          addresses.slice(cursor,cursor+100).forEach(function(address){
+            var li=document.createElement('li'), button=document.createElement('button');
+            button.textContent=address;
+            button.onclick=function(){mgLookupAddress(address)};
+            li.appendChild(button);list.appendChild(li);
+          });
+          mgClassCursor[index]=cursor+100;
+          if(mgClassCursor[index]>=addresses.length)document.getElementById('mgMore_'+index).style.display='none';
+        }
+        </script>
+        </body></html>
+        """
+    }
+
+    private class func initialQueryHTML() -> String {
+        """
+        <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>内存图查询</title>
+        <style>body{font:15px -apple-system,sans-serif;background:#f2f3f5;color:#212529;padding:16px;line-height:1.6}section{background:white;border-radius:10px;padding:16px;margin:12px 0}code{background:#f1f3f5;padding:2px 4px;border-radius:4px}button,input{font-size:14px;padding:8px}</style></head><body>
+        \(lookupBarHTML())
+        <section><h1>内存图查询</h1>
+          <p>输入当前进程的对象地址，可查看它的引用关系和循环引用链。</p>
+          <p>输入类地址或类名，可查看存活实例数，再点击一个实例查看详情。</p>
+          <p>Swift 类名可以省略模块前缀。例如 <code>MyViewController</code> 也可匹配 <code>App.MyViewController</code>。</p>
+          <p>点击查询后才会扫描当前进程堆；地址已释放时不会再找到原对象。</p>
+        </section></body></html>
+        """
+    }
+
+    private class func lookupBarHTML(initialValue: String = "") -> String {
+        """
+        <section style="background:#fff;padding:12px;border-radius:10px;margin-bottom:12px">
+          <input id="mgQuery" type="text" value="\(escapeHTML(initialValue))" placeholder="对象地址 / 类地址 / 类名（可省略 Swift 模块名）" style="width:75%;box-sizing:border-box">
+          <button onclick="mgLookup()">查询</button>
+          <div id="mgLookupStatus" style="color:#868e96;font-size:12px;margin-top:6px"></div>
+        </section>
+        <script>
+        function mgLookup(){var q=document.getElementById('mgQuery').value.trim();if(!q)return;var status=document.getElementById('mgLookupStatus');if(window.webkit&&window.webkit.messageHandlers.memoryLookup){status.textContent='正在扫描当前进程…';window.webkit.messageHandlers.memoryLookup.postMessage(q)}else{status.textContent='离线文件不能重新查询，请在 App 内打开。'}}
+        function mgLookupAddress(a){document.getElementById('mgQuery').value=a;mgLookup()}
+        function mgLookupDeep(){var q=document.getElementById('mgQuery').value.trim();if(q&&window.webkit&&window.webkit.messageHandlers.memoryLookup){document.getElementById('mgLookupStatus').textContent='正在完整扫描…';window.webkit.messageHandlers.memoryLookup.postMessage('deep:'+q)}}
+        function mgLookupDeepAddress(a){document.getElementById('mgQuery').value=a;mgLookupDeep()}
+        document.getElementById('mgQuery').addEventListener('keydown',function(e){if(e.key==='Enter')mgLookup()});
+        </script>
+        """
+    }
+
+    /// 在页面退出前调用。扫描仅保存地址和数量，延迟复查不持有目标页面。
+    /// presenter 应是退出后仍显示的调试入口；也可传 nil，由当前最上层页面展示。
+    @objc(watchDeallocationOf:from:after:)
+    public class func watchDeallocation(of target: UIViewController,
+                                        from presenter: UIViewController?,
+                                        after delay: TimeInterval) {
+        let targetAddress = unsafeBitCast(target, to: UInt.self)
+        let targetClass = NSStringFromClass(type(of: target))
+        weak let weakTarget = target
+        weak let weakPresenter = presenter
+        let before = MemoryGraphScanner()
+        before.identifyObjects()
+        let baselineObjectCount = before.objects.count
+        let baseline = classCounts(before.objects)
+        let baselineAddresses = Set(before.objects.map(\.address))
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.1)) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let after = MemoryGraphScanner()
+                after.identifyObjects()
+                let survived = weakTarget != nil
+                let current = classCounts(after.objects)
+                let report = survived ? after.referenceReport(of: targetAddress, maxDepth: 2) : nil
+                var newByClass: [String: Int] = [:]
+                var survivingByClass: [String: Int] = [:]
+                for object in after.objects {
+                    if baselineAddresses.contains(object.address) {
+                        survivingByClass[object.className, default: 0] += 1
+                    } else {
+                        newByClass[object.className, default: 0] += 1
+                    }
+                }
+                let changedClasses = Set(baseline.keys).union(current.keys).filter {
+                    baseline[$0] != current[$0] || (newByClass[$0] ?? 0) > 0
+                }.sorted { (newByClass[$0] ?? 0) > (newByClass[$1] ?? 0) }.prefix(12)
+                let rows = changedClasses.map { name in
+                    "<li>\(escapeHTML(name))：\(baseline[name] ?? 0) → \(current[name] ?? 0)，原地址仍在 \(survivingByClass[name] ?? 0)，新增地址 \(newByClass[name] ?? 0)</li>"
+                }.joined()
+                let status = survived ? "退出后仍存活" : "退出后已释放"
+                let detail = report.map { referenceReportHTML(for: $0) } ?? """
+                    <!DOCTYPE html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><body></body></html>
+                    """
+                let summary = "<section style='font-family:-apple-system;padding:16px;background:#fff;border-left:5px solid \(survived ? "#e03131" : "#2f9e44")'><h2>页面退出复查：\(status)</h2><p>\(escapeHTML(targetClass)) · 0x\(String(targetAddress, radix: 16))</p><p>退出前识别 \(baselineObjectCount) 个对象，复查识别 \(after.objects.count) 个。地址可能复用；目标是否释放以 weak 观察为准。下列数量变化仅供排查：</p><ul>\(rows.isEmpty ? "<li>类实例数无变化</li>" : rows)</ul></section>"
+                let html = detail.replacingOccurrences(of: "<body>", with: "<body>\(summary)")
+                let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("memory_lifetime_\(String(targetAddress, radix: 16))_\(UUID().uuidString).html")
+                guard (try? Data(html.utf8).write(to: url, options: .atomic)) != nil else { return }
+                DispatchQueue.main.async {
+                    guard let host = weakPresenter ?? topViewController() else { return }
+                    host.present(UINavigationController(rootViewController: MGWKWebViewController(localURL: url)), animated: true)
+                }
+            }
+        }
+    }
+
+    private class func classCounts(_ objects: [HeapObject]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for object in objects { counts[object.className, default: 0] += 1 }
+        return counts
+    }
+
+    private class func topViewController() -> UIViewController? {
+        let window: UIWindow?
+        if #available(iOS 13.0, *) {
+            window = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap(\.windows)
+                .first(where: { $0.isKeyWindow })
+        } else {
+            window = UIApplication.shared.windows.first(where: { $0.isKeyWindow })
+        }
+        var current = window?.rootViewController
+        while let controller = current {
+            if let presented = controller.presentedViewController { current = presented }
+            else if let navigation = controller as? UINavigationController { current = navigation.visibleViewController }
+            else if let tabs = controller as? UITabBarController { current = tabs.selectedViewController }
+            else { break }
+        }
+        return current
     }
 
     private class func escapeHTML(_ text: String) -> String {
@@ -352,7 +594,7 @@ public class MemoryGraphManager: NSObject {
           <h2>循环引用链</h2>
         """
         if report.cycles.isEmpty {
-            html += "<p class='empty'>未发现经过该对象的强引用环（可正常释放，或环超出搜索深度）</p>"
+            html += "<p class='empty'>本次搜索范围内未发现经过该对象的强引用环；请结合退出页面复查判断是否释放。</p>"
         } else {
             for (index, chain) in report.cycles.enumerated() {
                 let hasUnconfirmed = chain.edges.contains { $0.ownership == .unconfirmedStrong }
@@ -407,11 +649,15 @@ public class MemoryGraphManager: NSObject {
     }
 
     /// 单对象引用报告页：引用图 + 循环链 + 目标信息 + incoming（按反查层级分组）+ outgoing
-    private class func referenceReportHTML(for report: MemoryGraphScanner.ReferenceReport) -> String {
+    private class func referenceReportHTML(for report: MemoryGraphScanner.ReferenceReport,
+                                           quick: Bool = false) -> String {
         var body = """
+        \(lookupBarHTML(initialValue: hex(report.address)))
         <div class="card">
           <h1>引用关系报告</h1>
           <p class="target">\(escapeHTML(report.className)) <span class="addr">\(hex(report.address))</span> · \(report.size) 字节</p>
+          <p class="addr">识别 \(String(format: "%.2f", report.identifyDuration)) 秒 · 引用查询 \(String(format: "%.2f", report.scanDuration)) 秒 · 对象 \(report.scannedObjectCount) 个 · 反查全堆 \(report.incomingSweepCount) 次 · 查环展开 \(report.cycleSearchVisitedObjects) 个对象 · 未确证/未知边 \(report.unconfirmedEdgeCount) 条\(report.cycleSearchTruncated ? " · ⚠ 查环预算触顶，结果不完整" : "")</p>
+          \(quick ? "<p><button onclick=\"mgLookupDeepAddress('\(hex(report.address))')\">完整扫描引用链</button>（增加反查层级与查环预算）</p>" : "")
         </div>
         <div class="card">
           <h2>引用图</h2>
@@ -589,9 +835,11 @@ final class MGWKWebViewController: UIViewController {
 
     // MARK: - Properties
 
-    private let localURL: URL
+    private var localURL: URL
 
     private var webView: WKWebView!
+    private var messageProxy: MGWeakScriptMessageHandler?
+    private var latestLookupNumber = 0
 
     // MARK: - Init
 
@@ -621,6 +869,9 @@ final class MGWKWebViewController: UIViewController {
         setupNavigationItems()
 
         let configuration = WKWebViewConfiguration()
+        let proxy = MGWeakScriptMessageHandler(owner: self)
+        configuration.userContentController.add(proxy, name: "memoryLookup")
+        messageProxy = proxy
         if #available(iOS 14.0, *) {
             configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         } else {
@@ -644,7 +895,8 @@ final class MGWKWebViewController: UIViewController {
     /// 页面由调用方模态弹出：左侧关闭，右侧分享当前 HTML 文件。
     /// 按钮挂在 navigationItem 上，调用方需用 UINavigationController 包装后 present。
     private func setupNavigationItems() {
-        navigationItem.title = localURL.lastPathComponent
+        navigationItem.title = localURL.lastPathComponent.hasPrefix("memory_graph_search_")
+            ? "内存图查询" : "引用关系报告"
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .done, target: self, action: #selector(close))
         navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -659,6 +911,28 @@ final class MGWKWebViewController: UIViewController {
             localURL,
             allowingReadAccessTo: localURL.deletingLastPathComponent()
         )
+    }
+
+    fileprivate func beginLookup() -> Int {
+        latestLookupNumber += 1
+        return latestLookupNumber
+    }
+
+    fileprivate func showGeneratedHTML(_ html: String, requestNumber: Int) {
+        guard requestNumber == latestLookupNumber else { return }
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("memory_lookup_\(UUID().uuidString).html")
+        do {
+            try Data(html.utf8).write(to: url, options: .atomic)
+            localURL = url
+            navigationItem.title = "内存图查询结果"
+            loadLocalURL()
+        } catch {
+            let alert = UIAlertController(title: "报告保存失败", message: error.localizedDescription,
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+        }
     }
 
     // MARK: - Public Methods
@@ -693,6 +967,18 @@ final class MGWKWebViewController: UIViewController {
 
     @objc private func close() {
         dismiss(animated: true)
+    }
+}
+
+private final class MGWeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: MGWKWebViewController?
+
+    init(owner: MGWKWebViewController) { self.owner = owner }
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard let owner = owner, let query = message.body as? String else { return }
+        MemoryGraphManager.lookupMemoryQuery(query, from: owner)
     }
 }
 

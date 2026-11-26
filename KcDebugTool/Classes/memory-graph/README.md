@@ -34,6 +34,10 @@ open output/memory_graph.html
 - 点击节点，右侧面板列出 **被谁引用**（含属性名、地址）与 **引用了谁**，点击条目可跳转；
 - 拖拽移动节点 / 画布，滚轮缩放，悬停显示详情；
 - 顶部支持按类名搜索、只看循环引用节点。
+- 顶部「对象地址 / 类地址 / 类名」查询：对象地址直接选中并显示引用关系与一条经过它的循环链；
+  类地址显示该类存活实例数与地址列表；类名也可查询，Swift 类可省略模块前缀
+  （例如输入 `MGDemoSession` 匹配 `main.MGDemoSession`），点击实例进入对象详情。
+  类表包含当前快照已注册但零实例的类；对象与引用边仍受命令行 `--filter` 限制。
 
 ## 工作原理
 
@@ -152,6 +156,49 @@ Aspects / KVO 等运行时动态子类的 metadata 位于 malloc 堆，不能直
 
 **Debug 菜单触发**（复现疑似泄漏的操作路径之后）：
 
+### 直接打开查询页（无需预先选中对象）
+
+Objective-C 项目在 Debug 菜单按钮里调用：
+
+```objc
+#import <KcDebugTool/KcDebugTool-Swift.h>
+
+[MemoryGraphManager openMemoryGraphFrom:self];
+```
+
+这会立即打开空白的 WKWebView 查询页，**打开时不扫描堆**。在网页输入当前进程的
+对象地址、类地址或类名并点击「查询」后，才在后台识别堆对象并生成结果；
+类名支持省略 Swift 模块前缀。类查询可点击某个存活实例，继续查看其引用图和循环链。
+类名/类地址默认走快速路径：只枚举运行时类表和 malloc 块首字，不建立完整对象图；
+结果页可点「完整扫描此类」补查未注册的 Swift 泛型类。对象地址默认只做一轮
+全堆反查和有限预算的查环；结果页可点「完整扫描引用链」追加第二层反查并扩大
+查环预算。每次查询都是当前进程的新快照，不缓存上次对象地址。
+
+### 页面退出后复查（推荐）
+
+在准备退出目标页面时启动观察；`from:` 传退出后仍显示的调试入口页面，
+也可传 `nil` 让工具查找当前最上层页面。入口只保存目标地址和 weak 引用，
+不会因诊断闭包强持有目标。默认可延迟 2 秒，需在调用后正常 pop / dismiss 目标页面：
+
+```objc
+#import <KcDebugTool/KcDebugTool-Swift.h>
+
+[MemoryGraphManager watchDeallocationOf:targetViewController
+                                   from:self
+                                  after:2.0];
+[self.navigationController popViewControllerAnimated:YES];
+```
+
+复查报告显示目标是否仍存活、前后各类实例数、原地址仍在数与新增地址数；
+目标存活时附带引用图和循环链。地址可能被 malloc 复用，所以目标释放与否以
+weak 观察为准，数量差异仅用于定位可疑类。调用该入口会在当前线程先做一次
+堆对象识别；建议从 Debug 菜单或页面退出调试操作调用，勿放进高频生命周期回调。
+报告在 `Documents/memory_lifetime_*.html`，可从页面右上角分享。
+
+`captureMemoryGraph(from:)` 与 `captureMemoryGraph(forAddress:from:)` 的后台任务
+现在弱持有展示 VC，报告文件按地址和时间命名；如展示 VC 已退出，报告仍保存在
+Documents，不会再把该 VC 留到扫描结束。
+
 推荐按需查询：识别堆对象秒级完成，再对单个对象（如当前页面 VC）反查被谁引用、
 它引用了谁；参与找环的强引用、unknown、weak / unowned 分组展示，只有参与找环的
 强引用（confirmed + 未确证 strong）继续向上展开引用层级并参与找环：
@@ -178,25 +225,33 @@ func captureReferenceReport(of target: UIViewController, from presenter: UIViewC
 `referenceReport(of:maxDepth:)` 的 incoming 每层做一次全堆定向扫描，`maxDepth` 层即
 `maxDepth` 次扫描；`maxDepth: 1` 只看直接引用者，建议 2。weak / unowned 会保留在
 当前层报告和引用图中，但不会作为下一层 target，因此不会伪造成持有链。
+报告页同时显示对象数、反查次数、查环展开数和搜索预算是否触顶；
+「未发现环」仅表示本次搜索范围内未发现，不能代替页面退出后的释放检查。
 Swift fieldmd 只解析 App bundle 内的主程序、debug dylib 与内嵌 framework / Pod，
 不会扫描系统镜像；解析后按类名及「镜像 + 规范化字段名」建立倒排索引。查询新类时
 只访问候选描述符，不再对每个字段遍历整份 fieldmd；Aspects / KVO 动态子类回退到
 同一静态父类时也会复用已完成的反射布局。
 
-**App 内 `MGTool` 的两个入口**（`Projects/MGTool.swift`）：
+**App 内 `MemoryGraphManager` 的三个入口**（`Sources/MemoryGraphManager.swift`）：
 
-```swift
-// 入口一：直接查当前页面 VC
-MGTool.captureMemoryGraph(from: viewController)
+```objc
+// 入口一：先打开空白查询页，再在网页输入地址或类名
+[MemoryGraphManager openMemoryGraphFrom:self];
 
-// 入口二：按 16 进制字符串地址查（用于复看报告 / 日志里记下的地址）
-MGTool.captureMemoryGraph(forAddress: "0x14f2ab100", from: viewController)
-// 也兼容 "0X14F2AB100"、"14f2ab100"、首尾空格；格式非法弹「地址格式无效」
+// 入口二：直接查当前页面 VC
+[MemoryGraphManager captureMemoryGraphFrom:self];
+
+// 入口三：直接查指定对象地址
+[MemoryGraphManager captureMemoryGraphForAddress:@"0x14f2ab100" from:self];
 ```
 
-两个入口共用同一套查询与报告页生成逻辑（后台队列识别堆对象并查询，
-主线程用 `MGWKWebViewController` 打开 `Documents/reference_report.html`）；
+查询结果共用同一套后台扫描与报告生成逻辑，主线程用 `MGWKWebViewController`
+展示 `Documents/memory_lookup_*.html` 或 `Documents/reference_report_*.html`；
 地址解析失败或对象已释放 / 地址失效时弹提示，不会白屏。
+App 内报告 HTML 也有「对象地址 / 类地址 / 类名」输入框：通过 WKWebView 的
+`memoryLookup` 消息回到原生层重新扫描，输入对象地址打开该对象的报告；
+输入类地址或名称列出存活实例，点击地址继续查引用链。分享后的离线单文件
+保留已有结果，但重新查询需要在 App 内打开。
 `report.outgoing` / `nonStrongOutgoing` / `cycles` 等字段说明见上文。
 
 **循环引用链**：`report.cycles` 是「从目标出发、沿强引用边最终回到目标」的完整链
@@ -208,6 +263,10 @@ MGTool.captureMemoryGraph(forAddress: "0x14f2ab100", from: viewController)
 与全图 `scan()` 的 Tarjan SCC 区别：SCC 给出「哪些对象构成环」，这里给出「具体怎么绕回来的路径」。
 
 也可以只导出 JSON（`scanner.exportJSONData()`）用 `graph.json` 做定时快照 diff（对象数只增不减的类 = 疑似泄漏）。
+
+全图 HTML 默认只布局入度最高的 300 个节点，搜索或「只看循环引用」可切换可见范围；
+可单独打开 weak / unowned 边。每条边只有在两端属于同一个强连通分量时才标为环边。
+这是诊断画布的显示限制，JSON 保留完整节点和边。
 
 全量内存图（`scanner.scan()` + `exportHTMLData(template:)`）解析全部对象引用边并找环，
 在大堆上耗时分钟级，仅确需全图时使用。
@@ -251,7 +310,8 @@ MGTool.captureMemoryGraph(forAddress: "0x14f2ab100", from: viewController)
 {
   "generatedAt": "…",
   "classFilter": "MGDemo",
-  "nodes": [{ "address": "0x…", "className": "…", "size": 48, "inDegree": 3, "inCycle": true }],
+  "classes": [{ "address": "0x…", "name": "main.MGDemoSession", "instanceCount": 1 }],
+  "nodes": [{ "address": "0x…", "classAddress": "0x…", "className": "…", "size": 48, "inDegree": 3, "inCycle": true }],
   "edges": [{ "from": "0x…", "to": "0x…", "ivar": "token", "indirect": false }],
   "cycles": [["0x…", "0x…"]]
 }

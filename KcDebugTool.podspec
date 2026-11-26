@@ -126,7 +126,6 @@ TODO: Add long description of the pod here.
       ss.exclude_files = [
         "KcDebugTool/Classes/memory-graph/Sources/main.swift",
       ]
-      ss.dependency 'KcDebugTool/zombieTool'
       ss.frameworks = 'UIKit'
   end
   
